@@ -1,0 +1,10 @@
+os
+transformers
+datasets
+evaluate
+matplotlib
+pandas
+numpy
+asyncio
+python-dotenv
+portkey-ai
