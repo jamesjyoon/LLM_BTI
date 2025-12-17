@@ -7,10 +7,7 @@
 #SBATCH -t 24:00:00                          # Duration (hh:mm:ss)
 #SBATCH --output=translation_eval_%j.out     # Standard output log (%j = job ID)
 #SBATCH --error=translation_eval_%j.err      # Standard error log
-#SBATCH --mail-type=BEGIN,END,FAIL           # Email notifications
-#SBATCH --mail-user=your_email@gatech.edu    # Your email address
 #SBATCH -qinferno                            # Queue (use 'inferno' for A100, 'embers' for other GPUs)
-#SBATCH -A<your_project_account>             # Project account (replace with your account)
 
 # Load required modules
 module purge
