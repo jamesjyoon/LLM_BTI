@@ -1,11 +1,33 @@
-os
-transformers
-datasets
-evaluate
-matplotlib
-pandas
-numpy
-asyncio
-python-dotenv
-portkey-ai
-sentence-transformers
+# Core ML Libraries
+torch>=2.0.0
+transformers>=4.30.0
+datasets>=2.14.0
+evaluate>=0.4.0
+sentence-transformers>=2.2.0
+
+# API and Environment
+portkey-ai>=1.0.0
+python-dotenv>=1.0.0
+
+# Data Processing and Visualization
+numpy>=1.24.0
+matplotlib>=3.7.0
+
+# Additional Dependencies
+accelerate>=0.20.0
+sacrebleu>=2.3.0
+sentencepiece>=0.1.99
+protobuf>=3.20.0
+
+# For COMET metric
+unbabel-comet>=2.0.0
+
+# Utilities
+tqdm>=4.65.0
+requests>=2.31.0
+
+
+
+
+
+
