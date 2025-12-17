@@ -4,9 +4,11 @@
 #SBATCH --cpus-per-task=8                    # Number of CPU cores per task
 #SBATCH --mem=32G                            # Memory per node
 #SBATCH --gres=gpu:A100:1                    # Request 1 A100 GPU (adjust as needed)
+#SBATCH -t 24:00:00                          # Duration (hh:mm:ss)
 #SBATCH --output=translation_eval_%j.out     # Standard output log (%j = job ID)
 #SBATCH --error=translation_eval_%j.err      # Standard error log
 #SBATCH --qos=coc-ice
+
 
 # Load required modules
 module purge
@@ -24,11 +26,15 @@ echo "Memory: $SLURM_MEM_PER_NODE"
 cd $SLURM_SUBMIT_DIR
 echo "Working directory: $(pwd)"
 
+# Initialize conda for bash shell
+eval "$(conda shell.bash hook)"
+
 # Activate your existing conda environment
 echo "Activating conda environment: llm_bti"
-source activate llm_bti
+conda activate llm_bti
 
 # Verify environment activation
+echo "Conda environment: $CONDA_DEFAULT_ENV"
 echo "Python location: $(which python)"
 echo "Python version: $(python --version)"
 
@@ -67,3 +73,17 @@ fi
 conda deactivate
 
 echo "Job finished on $(date)"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
