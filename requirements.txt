@@ -8,3 +8,4 @@ numpy
 asyncio
 python-dotenv
 portkey-ai
+sentence-transformers
