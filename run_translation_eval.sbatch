@@ -7,7 +7,7 @@
 #SBATCH -t 24:00:00                          # Duration (hh:mm:ss)
 #SBATCH --output=translation_eval_%j.out     # Standard output log (%j = job ID)
 #SBATCH --error=translation_eval_%j.err      # Standard error log
-#SBATCH -qinferno                            # Queue (use 'inferno' for A100, 'embers' for other GPUs)
+#SBATCH --qos=coc-ice
 
 # Load required modules
 module purge
