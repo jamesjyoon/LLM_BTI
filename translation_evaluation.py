@@ -192,9 +192,9 @@ class NLLBTranslator(BaseTranslator):
     def __init__(self, model_name="facebook/nllb-200-distilled-600M", name="NLLBTranslator", max_length=512, get_code_func=None):
         super().__init__(name, max_length)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, token=HUGGING_FACE_HUB_TOKEN)
-        # Populate lang_code_to_id if missing (for older tokenizer versions)
-        if not hasattr(self.tokenizer, "lang_code_to_id"):
-             self.tokenizer.lang_code_to_id = {get_nllb_code(lang): self.tokenizer.convert_tokens_to_ids(get_nllb_code(lang)) for lang in get_nllb_code('').keys()}
+        # # Populate lang_code_to_id if missing (for older tokenizer versions)
+        # if not hasattr(self.tokenizer, "lang_code_to_id"):
+        #      self.tokenizer.lang_code_to_id = {get_nllb_code(lang): self.tokenizer.convert_tokens_to_ids(get_nllb_code(lang)) for lang in get_nllb_code('').keys()}
         
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name, token=HUGGING_FACE_HUB_TOKEN)
         self.get_code_func = get_code_func if get_code_func is not None else get_nllb_code
