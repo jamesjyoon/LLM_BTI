@@ -575,12 +575,14 @@ class ConvergentBackTranslationImprover:
 # FloresTranslationEvaluator Class
 # -----------------------------
 class FloresTranslationEvaluator:
-    def __init__(self, dataset_name="gsarti/flores_101", lang_pair='eng-kor'):
+    def __init__(self, dataset_name="Muennighoff/flores", lang_pair='eng-kor'):
         self.dataset_name = dataset_name
         self.lang_pair = lang_pair
         self.src_lang, self.tgt_lang = lang_pair.split('-')
-        print(f"Loading dataset '{dataset_name}' with configuration '{lang_pair}' ...")
-        self.dataset = load_dataset(self.dataset_name, self.lang_pair)
+        
+        print(f"Loading dataset '{dataset_name}'...")
+        # Use the newer format
+        self.dataset = load_dataset(self.dataset_name, name=f"{self.src_lang}-{self.tgt_lang}")
         
         # Initialize evaluation metrics
         self.comet_metric = evaluate.load("comet", config_name="wmt20-comet-da")
