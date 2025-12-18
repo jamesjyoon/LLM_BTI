@@ -574,17 +574,16 @@ class ConvergentBackTranslationImprover:
 # -----------------------------
 # FloresTranslationEvaluator Class
 # -----------------------------
-class FloresTranslationEvaluator:      
-    def __init__(self, dataset_name="gsarti/flores_101", lang_pair='eng-kor'):
+class FloresTranslationEvaluator: 
+    def __init__(self, dataset_name="Muennighoff/flores200", split='devtest'):  # or 'devtest' for more sentences
         self.dataset_name = dataset_name
-        self.lang_pair = lang_pair
-        self.src_lang, self.tgt_lang = lang_pair.split('-')
-        
-        print(f"Loading dataset '{dataset_name}' with languages '{lang_pair}'...")
-        # Load the dataset - flores_101 uses simple language codes
-        self.dataset = load_dataset(self.dataset_name, self.lang_pair)
-        
-        # Initialize evaluation metrics
+        self.split = split  # e.g., 'dev' or 'devtest'
+
+        print(f"Loading dataset '{dataset_name}' split '{split}'...")
+        # Load full dataset (all languages)
+        self.dataset = load_dataset(self.dataset_name, split=self.split)
+
+        # Metrics remain the same
         self.comet_metric = evaluate.load("comet", config_name="wmt20-comet-da")
         self.chrf_metric = evaluate.load("chrf")
     def run_pipeline_on_example(self, index: int, nllb_translator: NLLBTranslator, 
@@ -602,13 +601,17 @@ class FloresTranslationEvaluator:
         if split is None:
             raise ValueError("No suitable split found in the dataset.")
 
-        example = self.dataset[split][index]
-        source_text = example["sentence_eng"]
-        reference_translation = example["sentence_kor"]
-        
-        # Get human-readable language names
-        src_lang_name = get_nllb_lang_name(src_code)
-        tgt_lang_name = get_nllb_lang_name(tgt_code)
+        example = self.dataset[index]
+
+        src_code = "eng_Latn"   # Full NLLB-style code
+        tgt_code = "kor_Hang"
+
+        source_text = example[f"sentence_{src_code}"]
+        reference_translation = example[f"sentence_{tgt_code}"]
+
+        # Optional: Get human-readable names (your existing functions work)
+        src_lang_name = get_nllb_lang_name(src_code)   # Returns "English"
+        tgt_lang_name = get_nllb_lang_name(tgt_code)   # Returns "Korean"
         
         source_text = example["translation"].get(src_code)
         reference_translation = example["translation"].get(tgt_code)
@@ -848,9 +851,9 @@ class FloresTranslationEvaluator:
 # Main Execution: Evaluate on Dataset Examples
 # -----------------------------
 if __name__ == "__main__":
-    SOURCE_LANG_CODE = "eng"  # Changed from "eng_Latn"
-    TARGET_LANG_CODE = "kor"  # Changed from "kor_Hang"
-    LANGUAGE_PAIR = f"{SOURCE_LANG_CODE}-{TARGET_LANG_CODE}"
+    SOURCE_LANG_CODE = "eng_Latn"
+    TARGET_LANG_CODE = "kor_Hang"
+    LANGUAGE_PAIR = f"{SOURCE_LANG_CODE}-{TARGET_LANG_CODE}"  # Optional, for display
     
     NUM_EXAMPLES_TO_EVALUATE = 50 # Set to a reasonable number for initial testing
     MAX_ITERATIONS_FOR_LLMBTI = 3 
@@ -875,7 +878,7 @@ if __name__ == "__main__":
         raise ValueError("Invalid SIMILARITY_CALCULATOR_TYPE. Choose 'LCS' or 'SentenceTransformer'.")
 
     # --- Create Evaluator Instance ---
-    flores_evaluator = FloresTranslationEvaluator(lang_pair=LANGUAGE_PAIR)
+    flores_evaluator = FloresTranslationEvaluator(split='devtest')  # 'devtest' has ~2000 sentences, better for evaluation
     
     # --- Run Evaluation ---
     split_name = None
