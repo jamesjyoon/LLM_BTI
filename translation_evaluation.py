@@ -574,20 +574,19 @@ class ConvergentBackTranslationImprover:
 # -----------------------------
 # FloresTranslationEvaluator Class
 # -----------------------------
-class FloresTranslationEvaluator:
-    def __init__(self, dataset_name="Muennighoff/flores", lang_pair='eng-kor'):
+class FloresTranslationEvaluator:      
+    def __init__(self, dataset_name="gsarti/flores_101", lang_pair='eng-kor'):
         self.dataset_name = dataset_name
         self.lang_pair = lang_pair
         self.src_lang, self.tgt_lang = lang_pair.split('-')
         
-        print(f"Loading dataset '{dataset_name}'...")
-        # Use the newer format
-        self.dataset = load_dataset(self.dataset_name, name=f"{self.src_lang}-{self.tgt_lang}")
+        print(f"Loading dataset '{dataset_name}' with languages '{lang_pair}'...")
+        # Load the dataset - flores_101 uses simple language codes
+        self.dataset = load_dataset(self.dataset_name, self.lang_pair)
         
         # Initialize evaluation metrics
         self.comet_metric = evaluate.load("comet", config_name="wmt20-comet-da")
         self.chrf_metric = evaluate.load("chrf")
-    
     def run_pipeline_on_example(self, index: int, nllb_translator: NLLBTranslator, 
                                 mbart_translator: MBARTTranslator, # Added mBART
                                 critique_agent: EnhancedCritiqueAgent,
@@ -849,9 +848,8 @@ class FloresTranslationEvaluator:
 # Main Execution: Evaluate on Dataset Examples
 # -----------------------------
 if __name__ == "__main__":
-    # --- Configuration ---
-    SOURCE_LANG_CODE = "eng"
-    TARGET_LANG_CODE = "kor"
+    SOURCE_LANG_CODE = "eng"  # Changed from "eng_Latn"
+    TARGET_LANG_CODE = "kor"  # Changed from "kor_Hang"
     LANGUAGE_PAIR = f"{SOURCE_LANG_CODE}-{TARGET_LANG_CODE}"
     
     NUM_EXAMPLES_TO_EVALUATE = 50 # Set to a reasonable number for initial testing
