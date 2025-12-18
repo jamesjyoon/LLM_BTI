@@ -30,7 +30,7 @@ eval "$(conda shell.bash hook)"
 
 # Activate your existing conda environment
 echo "Activating conda environment: llm_bti"
-conda activate llm_bti
+conda activate /storage/ice1/6/3/jyoon370/conda_envs/llm_bti
 
 # Verify environment activation
 echo "Conda environment: $CONDA_DEFAULT_ENV"
