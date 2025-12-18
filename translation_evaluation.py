@@ -575,11 +575,11 @@ class ConvergentBackTranslationImprover:
 # FloresTranslationEvaluator Class
 # -----------------------------
 class FloresTranslationEvaluator:
-    def __init__(self, dataset_name="openlanguagedata/flores_plus", lang_pair='eng_Latn-kor_Hang'):
+    def __init__(self, dataset_name="facebook/flores", lang_pair='eng_Latn-kor_Hang'):
         self.dataset_name = dataset_name
         self.lang_pair = lang_pair
         print(f"Loading dataset '{dataset_name}' with configuration '{lang_pair}' ...")
-        self.dataset = load_dataset(self.dataset_name, self.lang_pair)
+        self.dataset = load_dataset(dataset_name, "all")
         
         # Initialize evaluation metrics
         self.comet_metric = evaluate.load("comet", config_name="wmt20-comet-da")
@@ -601,7 +601,8 @@ class FloresTranslationEvaluator:
             raise ValueError("No suitable split found in the dataset.")
 
         example = self.dataset[split][index]
-        src_code, tgt_code = self.lang_pair.split('-')
+        source_text = example["sentence_" + self.src_lang]
+        reference_translation = example["sentence_" + self.tgt_lang]
         
         # Get human-readable language names
         src_lang_name = get_nllb_lang_name(src_code)
