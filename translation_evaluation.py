@@ -575,7 +575,7 @@ class ConvergentBackTranslationImprover:
 # FloresTranslationEvaluator Class
 # -----------------------------
 class FloresTranslationEvaluator:
-    def __init__(self, dataset_name="Muennighoff/flores200", lang_pair='eng_Latn-kor_Hang'):
+    def __init__(self, dataset_name="openlanguagedata/flores_plus", lang_pair='eng_Latn-kor_Hang'):
         self.dataset_name = dataset_name
         self.lang_pair = lang_pair
         print(f"Loading dataset '{dataset_name}' with configuration '{lang_pair}' ...")
