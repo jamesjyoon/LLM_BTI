@@ -18,7 +18,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer, util
 
 # Set backend for matplotlib
-matplotlib.use('TkAgg') # Use 'Agg' for non-interactive environments, 'TkAgg' for interactive plotting
+matplotlib.use('Agg') # Use 'Agg' for non-interactive environments, 'TkAgg' for interactive plotting
 
 # Optionally, disable progress bars from the Hugging Face Hub.
 os.environ["HF_HUB_DISABLE_PROGRESS_BAR"] = "1"
