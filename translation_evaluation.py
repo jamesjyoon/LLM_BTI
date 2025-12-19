@@ -200,7 +200,7 @@ class NLLBTranslator(BaseTranslator):
         self.get_code_func = get_code_func if get_code_func is not None else get_nllb_code
 
     def get_forced_bos_token_id(self, tgt_code: str) -> int:
-        token_id = self.tokenizer.lang_code_to_id.get(tgt_code)
+        token_id = self.tokenizer.convert_tokens_to_ids(tgt_code)
         if token_id is None or token_id == self.tokenizer.unk_token_id:
             raise ValueError(f"Language token {tgt_code} not found in NLLB vocabulary.")
         return token_id
@@ -519,16 +519,16 @@ class ConvergentBackTranslationImprover:
             previous_similarity = current_similarity
             
             # Refine using critique agent
-            refined_translation = self.critique_agent.refine_with_discrepancies(
+            refined_translation = self..refine_with_discrepancies(
                 current_translation, source_text, back_translation, discrepancies, src_lang_name, tgt_lang_name
             )
             print("\nRefined Translation (LLM-BTI):")
             print(refined_translation)
             
-            results["total_critique_duration"] += self.critique_agent.total_critique_duration
-            results["total_critique_tokens"] += self.critique_agent.total_critique_tokens
-            self.critique_agent.total_critique_duration = 0 # Reset
-            self.critique_agent.total_critique_tokens = 0 # Reset
+            results["total_critique_duration"] += self..total_critique_duration
+            results["total_critique_tokens"] += self..total_critique_tokens
+            self..total_critique_duration = 0 # Reset
+            self..total_critique_tokens = 0 # Reset
 
             if refined_translation.strip() == current_translation.strip():
                 print("No meaningful change detected by LLM. Ending iterations.\n")
@@ -593,7 +593,7 @@ class FloresTranslationEvaluator:
     def run_pipeline_on_example(self, index: int, 
                                 nllb_translator: NLLBTranslator, 
                                 mbart_translator: MBARTTranslator, 
-                                critique_agent: EnhancedCritiqueAgent,
+                                : EnhancedCritiqueAgent,
                                 llm_only_translator: LLMOnlyTranslator, 
                                 similarity_calculator_instance: SimilarityCalculator,
                                 src_lang_code: str = "eng",   # iso_639_3
@@ -635,15 +635,15 @@ class FloresTranslationEvaluator:
         nllb_translator.total_tokens = 0
         mbart_translator.total_duration = 0
         mbart_translator.total_tokens = 0
-        critique_agent.total_critique_duration = 0
-        critique_agent.total_critique_tokens = 0
+        .total_critique_duration = 0
+        .total_critique_tokens = 0
         llm_only_translator.total_duration = 0
         llm_only_translator.total_tokens = 0
 
         # 1. LLM-BTI with NLLB
         print("\n--- Running LLM-BTI (NLLB as base) ---")
         llm_bti_nllb_improver = ConvergentBackTranslationImprover(
-            nllb_translator, critique_agent, similarity_calculator_instance
+            nllb_translator, , similarity_calculator_instance
         )
         llm_bti_nllb_results = llm_bti_nllb_improver.improve_translation(
             source_text, src_lang_name, tgt_lang_name,
@@ -655,7 +655,7 @@ class FloresTranslationEvaluator:
         # 2. LLM-BTI with mBART
         print("\n--- Running LLM-BTI (mBART as base) ---")
         llm_bti_mbart_improver = ConvergentBackTranslationImprover(
-            mbart_translator, critique_agent, similarity_calculator_instance
+            mbart_translator, , similarity_calculator_instance
         )
         llm_bti_mbart_results = llm_bti_mbart_improver.improve_translation(
             source_text, src_lang_name, tgt_lang_name,
@@ -733,7 +733,7 @@ class FloresTranslationEvaluator:
 
     def run_pipeline_on_examples(self, src_code: str, tgt_code: str, indices: list,
                                  nllb_translator: NLLBTranslator, mbart_translator: MBARTTranslator,
-                                 critique_agent: EnhancedCritiqueAgent,
+                                 : EnhancedCritiqueAgent,
                                  llm_only_translator: LLMOnlyTranslator, 
                                  similarity_calculator_instance: SimilarityCalculator,
                                  max_iterations: int = 3, debug: bool = True):
@@ -759,7 +759,7 @@ class FloresTranslationEvaluator:
             print(f"\n================== Running example {idx} ==================\n")
             try:
                 result = self.run_pipeline_on_example(
-                    idx, nllb_translator, mbart_translator, critique_agent,
+                    idx, nllb_translator, mbart_translator, ,
                     llm_only_translator, similarity_calculator_instance,
                     src_lang_code=src_lang_code, src_script=src_script,
                     tgt_lang_code=tgt_lang_code, tgt_script=tgt_script,
@@ -868,8 +868,8 @@ if __name__ == "__main__":
     # --- Initialize Models (unchanged) ---
     nllb_translator = NLLBTranslator(get_code_func=get_nllb_code, max_length=512)
     mbart_translator = MBARTTranslator(get_code_func=get_mbart_code, max_length=512)
-    critique_agent = EnhancedCritiqueAgent(model="llama3-70b-8192", max_tokens=512)
-    llm_only_translator = LLMOnlyTranslator(model="llama3-70b-8192", max_tokens=512)
+    critique_agent = EnhancedCritiqueAgent(model="llama-3.3-70b-versatile", max_tokens=512)
+    llm_only_translator = LLMOnlyTranslator(model="llama-3.3-70b-versatile", max_tokens=512)
 
     if SIMILARITY_CALCULATOR_TYPE == "LCS":
         similarity_calculator = LCSBasedSimilarityCalculator()
@@ -912,11 +912,9 @@ if __name__ == "__main__":
     
     actual_num_examples = len(flores_evaluator.dataset)
     indices_to_use = list(range(min(actual_num_examples, NUM_EXAMPLES_TO_EVALUATE)))
-    print(f"\n--- Starting evaluation on {len(indices_to_use)} examples for {get_nllb_lang_name(SOURCE_LANG_CODE)} to {get_nllb_lang_name(TARGET_LANG_CODE)} ---")
     print(f"--- Base NMT for LLM-BTI: NLLB and mBART ---")
 
     flores_evaluator.run_pipeline_on_examples(
-        SOURCE_LANG_CODE, TARGET_LANG_CODE,
         indices_to_use, nllb_translator, mbart_translator, critique_agent, llm_only_translator, 
         similarity_calculator, # Pass the instance here
         max_iterations=MAX_ITERATIONS_FOR_LLMBTI, debug=False # Set debug=True for detailed output per example
