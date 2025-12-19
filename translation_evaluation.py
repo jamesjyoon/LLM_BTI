@@ -17,6 +17,7 @@ import numpy as np
 # Import for sentence-transformers
 from sentence_transformers import SentenceTransformer, util
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # Set backend for matplotlib
 matplotlib.use('Agg') # Use 'Agg' for non-interactive environments, 'TkAgg' for interactive plotting
 
