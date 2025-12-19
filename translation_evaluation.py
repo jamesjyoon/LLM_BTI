@@ -577,133 +577,171 @@ class ConvergentBackTranslationImprover:
 class FloresTranslationEvaluator: 
     def __init__(self, dataset_name="openlanguagedata/flores_plus", split='devtest'):
         self.dataset_name = dataset_name
-        self.split = split  # 'dev' (~1000 sentences) or 'devtest' (~1012 sentences)
+        self.split = split
 
         print(f"Loading dataset '{dataset_name}' split '{split}' (all languages)...")
-        # Loads the full multilingual table for the chosen split
+        # Load the full multilingual dataset for the chosen split
         self.dataset = load_dataset(self.dataset_name, split=self.split)
+
+        # Optional: Convert to Pandas for easier filtering (recommended for large datasets)
+        import pandas as pd
+        self.df = self.dataset.to_pandas()
 
         # Metrics unchanged
         self.comet_metric = evaluate.load("comet", config_name="wmt20-comet-da")
         self.chrf_metric = evaluate.load("chrf")
-    def run_pipeline_on_example(self, index: int, nllb_translator: NLLBTranslator, 
-                                mbart_translator: MBARTTranslator, # Added mBART
-                                critique_agent: EnhancedCritiqueAgent,
-                                llm_only_translator: LLMOnlyTranslator,
-                                similarity_calculator_instance: SimilarityCalculator, # Passed for LLM-BTI
-                                max_iterations: int = 3, debug: bool = True) -> dict:
-        
-        example = self.dataset[index]
-
-        src_code = "eng_Latn"   # Full NLLB-style code
-        tgt_code = "kor_Hang"
-
-        source_text = example[f"sentence_{src_code}"]
-        reference_translation = example[f"sentence_{tgt_code}"]
-
-        # Optional: Get human-readable names (your existing functions work)
-        src_lang_name = get_nllb_lang_name(src_code)   # Returns "English"
-        tgt_lang_name = get_nllb_lang_name(tgt_code)   # Returns "Korean"
- 
-        print(f"\nSource text ({src_lang_name}) from dataset:")
-        print(source_text)
-        print(f"\nReference translation ({tgt_lang_name}) from dataset:")
-        print(reference_translation)
-        
-        # 1. Run LLM-BTI with NLLB as base NMT
-        print("\n--- Running LLM-BTI (NLLB as base) ---")
-        llm_bti_nllb_improver = ConvergentBackTranslationImprover(nllb_translator, critique_agent, similarity_calculator_instance)
-        llm_bti_nllb_results = llm_bti_nllb_improver.improve_translation(
-            source_text, src_lang_name, tgt_lang_name, 
-            convergence_threshold=0.90, max_iterations=max_iterations, min_improvement_delta=0.005, debug=debug
-        )
-        final_translation_llm_bti_nllb = llm_bti_nllb_results["final_translation"]
-        print(f"\nFinal Improved Translation (LLM-BTI with NLLB) from dataset example:")
-        print(final_translation_llm_bti_nllb)
-
-        # 2. Run LLM-BTI with mBART as base NMT
-        print("\n--- Running LLM-BTI (mBART as base) ---")
-        llm_bti_mbart_improver = ConvergentBackTranslationImprover(mbart_translator, critique_agent, similarity_calculator_instance)
-        llm_bti_mbart_results = llm_bti_mbart_improver.improve_translation(
-            source_text, src_lang_name, tgt_lang_name, 
-            convergence_threshold=0.90, max_iterations=max_iterations, min_improvement_delta=0.005, debug=debug
-        )
-        final_translation_llm_bti_mbart = llm_bti_mbart_results["final_translation"]
-        print(f"\nFinal Improved Translation (LLM-BTI with mBART) from dataset example:")
-        print(final_translation_llm_bti_mbart)
-        
-        # 3. Get NLLB Primary Translation (baseline 1)
-        primary_translation_nllb = nllb_translator.translate(source_text, src_lang_name, tgt_lang_name)
-        print(f"\nNLLB Primary Translation ({tgt_lang_name}):")
-        print(primary_translation_nllb)
-
-        # 4. Get mBART Primary Translation (baseline 2)
-        primary_translation_mbart = mbart_translator.translate(source_text, src_lang_name, tgt_lang_name)
-        print(f"\nmBART Primary Translation ({tgt_lang_name}):")
-        print(primary_translation_mbart)
-
-        # 5. Get LLM-Only Direct Translation (baseline 3)
-        llm_only_translation = llm_only_translator.translate(source_text, src_lang_name, tgt_lang_name)
-        print(f"\nLLM Only Direct Translation ({tgt_lang_name}):")
-        print(llm_only_translation)
-        
-        # --- Evaluation ---
-        # NLLB Primary
-        primary_nllb_comet_result = self.comet_metric.compute(sources=[source_text], predictions=[primary_translation_nllb], references=[reference_translation])
-        primary_nllb_chrf_result = self.chrf_metric.compute(predictions=[primary_translation_nllb], references=[reference_translation])
-        
-        # mBART Primary
-        primary_mbart_comet_result = self.comet_metric.compute(sources=[source_text], predictions=[primary_translation_mbart], references=[reference_translation])
-        primary_mbart_chrf_result = self.chrf_metric.compute(predictions=[primary_translation_mbart], references=[reference_translation])
-
-        # LLM Only Direct
-        llm_only_comet_result = self.comet_metric.compute(sources=[source_text], predictions=[llm_only_translation], references=[reference_translation])
-        llm_only_chrf_result = self.chrf_metric.compute(predictions=[llm_only_translation], references=[reference_translation])
-        
-        # LLM-BTI with NLLB
-        final_llm_bti_nllb_comet_result = self.comet_metric.compute(sources=[source_text], predictions=[final_translation_llm_bti_nllb], references=[reference_translation])
-        final_llm_bti_nllb_chrf_result = self.chrf_metric.compute(predictions=[final_translation_llm_bti_nllb], references=[reference_translation])
-
-        # LLM-BTI with mBART
-        final_llm_bti_mbart_comet_result = self.comet_metric.compute(sources=[source_text], predictions=[final_translation_llm_bti_mbart], references=[reference_translation])
-        final_llm_bti_mbart_chrf_result = self.chrf_metric.compute(predictions=[final_translation_llm_bti_mbart], references=[reference_translation])
-        
-        print("\nEvaluation Scores for dataset example:")
-        print(f"NLLB Primary Translation - COMET: {primary_nllb_comet_result['scores'][0]:.4f}, chrF: {primary_nllb_chrf_result['score']:.4f}")
-        print(f"mBART Primary Translation - COMET: {primary_mbart_comet_result['scores'][0]:.4f}, chrF: {primary_mbart_chrf_result['score']:.4f}")
-        print(f"LLM Only Direct Translation - COMET: {llm_only_comet_result['scores'][0]:.4f}, chrF: {llm_only_chrf_result['score']:.4f}")
-        print(f"LLM-BTI (NLLB Base) - COMET: {final_llm_bti_nllb_comet_result['scores'][0]:.4f}, chrF: {final_llm_bti_nllb_chrf_result['score']:.4f}")
-        print(f"LLM-BTI (mBART Base) - COMET: {final_llm_bti_mbart_comet_result['scores'][0]:.4f}, chrF: {final_llm_bti_mbart_chrf_result['score']:.4f}")
-        
-        # Return the evaluation scores and computational costs for aggregation.
-        return {
-            "primary_nllb_comet": primary_nllb_comet_result["scores"][0], "primary_nllb_chrf": primary_nllb_chrf_result["score"],
-            "primary_mbart_comet": primary_mbart_comet_result["scores"][0], "primary_mbart_chrf": primary_mbart_chrf_result["score"],
-            "llm_only_comet": llm_only_comet_result["scores"][0], "llm_only_chrf": llm_only_chrf_result["score"],
-            "final_llm_bti_nllb_comet": final_llm_bti_nllb_comet_result["scores"][0], "final_llm_bti_nllb_chrf": final_llm_bti_nllb_chrf_result["score"],
-            "final_llm_bti_mbart_comet": final_llm_bti_mbart_comet_result["scores"][0], "final_llm_bti_mbart_chrf": final_llm_bti_mbart_chrf_result["score"],
-
-            "llm_bti_nllb_duration": llm_bti_nllb_results["total_nmt_duration"],
-            "llm_bti_nllb_tokens": llm_bti_nllb_results["total_nmt_tokens"],
-            "llm_bti_nllb_critique_duration": llm_bti_nllb_results["total_critique_duration"],
-            "llm_bti_nllb_critique_tokens": llm_bti_nllb_results["total_critique_tokens"],
-
-            "llm_bti_mbart_duration": llm_bti_mbart_results["total_nmt_duration"],
-            "llm_bti_mbart_tokens": llm_bti_mbart_results["total_nmt_tokens"],
-            "llm_bti_mbart_critique_duration": llm_bti_mbart_results["total_critique_duration"],
-            "llm_bti_mbart_critique_tokens": llm_bti_mbart_results["total_critique_tokens"],
-
-            "llm_only_duration": llm_only_translator.total_duration,
-            "llm_only_tokens": llm_only_translator.total_tokens,
-        }
-    
-    def run_pipeline_on_examples(self, src_code: str, tgt_code: str, indices: list, 
-                                nllb_translator: NLLBTranslator, mbart_translator: MBARTTranslator,
+    def run_pipeline_on_example(self, index: int, 
+                                nllb_translator: NLLBTranslator, 
+                                mbart_translator: MBARTTranslator, 
                                 critique_agent: EnhancedCritiqueAgent,
                                 llm_only_translator: LLMOnlyTranslator, 
                                 similarity_calculator_instance: SimilarityCalculator,
-                                max_iterations: int = 3, debug: bool = True):
-        
+                                src_lang_code: str = "eng",   # iso_639_3
+                                src_script: str = "Latn",
+                                tgt_lang_code: str = "kor",   # iso_639_3
+                                tgt_script: str = "Hang",
+                                max_iterations: int = 3, 
+                                debug: bool = True) -> dict:
+
+        # Filter and align parallel sentences
+        src_rows = self.df[
+            (self.df['iso_639_3'] == src_lang_code) & 
+            (self.df['iso_15924'] == src_script)
+        ].sort_values('id').reset_index(drop=True)
+
+        tgt_rows = self.df[
+            (self.df['iso_639_3'] == tgt_lang_code) & 
+            (self.df['iso_15924'] == tgt_script)
+        ].sort_values('id').reset_index(drop=True)
+
+        if index >= len(src_rows) or index >= len(tgt_rows):
+            raise IndexError(f"Index {index} out of range for language pair {src_lang_code}-{tgt_lang_code}.")
+
+        source_text = src_rows.loc[index, 'text']
+        reference_translation = tgt_rows.loc[index, 'text']
+        sentence_id = src_rows.loc[index, 'id']
+
+        src_lang_name = get_nllb_lang_name(f"{src_lang_code}_{src_script}")
+        tgt_lang_name = get_nllb_lang_name(f"{tgt_lang_code}_{tgt_script}")
+
+        if debug:
+            print(f"\nSource text ({src_lang_name}) from dataset (id={sentence_id}):")
+            print(source_text)
+            print(f"\nReference translation ({tgt_lang_name}) from dataset:")
+            print(reference_translation)
+
+        # Reset cumulative costs before each example
+        nllb_translator.total_duration = 0
+        nllb_translator.total_tokens = 0
+        mbart_translator.total_duration = 0
+        mbart_translator.total_tokens = 0
+        critique_agent.total_critique_duration = 0
+        critique_agent.total_critique_tokens = 0
+        llm_only_translator.total_duration = 0
+        llm_only_translator.total_tokens = 0
+
+        # 1. LLM-BTI with NLLB
+        print("\n--- Running LLM-BTI (NLLB as base) ---")
+        llm_bti_nllb_improver = ConvergentBackTranslationImprover(
+            nllb_translator, critique_agent, similarity_calculator_instance
+        )
+        llm_bti_nllb_results = llm_bti_nllb_improver.improve_translation(
+            source_text, src_lang_name, tgt_lang_name,
+            convergence_threshold=0.90, max_iterations=max_iterations,
+            min_improvement_delta=0.005, debug=debug
+        )
+        final_translation_llm_bti_nllb = llm_bti_nllb_results["final_translation"]
+
+        # 2. LLM-BTI with mBART
+        print("\n--- Running LLM-BTI (mBART as base) ---")
+        llm_bti_mbart_improver = ConvergentBackTranslationImprover(
+            mbart_translator, critique_agent, similarity_calculator_instance
+        )
+        llm_bti_mbart_results = llm_bti_mbart_improver.improve_translation(
+            source_text, src_lang_name, tgt_lang_name,
+            convergence_threshold=0.90, max_iterations=max_iterations,
+            min_improvement_delta=0.005, debug=debug
+        )
+        final_translation_llm_bti_mbart = llm_bti_mbart_results["final_translation"]
+
+        # 3. NLLB Primary
+        primary_translation_nllb = nllb_translator.translate(source_text, src_lang_name, tgt_lang_name)
+
+        # 4. mBART Primary
+        primary_translation_mbart = mbart_translator.translate(source_text, src_lang_name, tgt_lang_name)
+
+        # 5. LLM-Only Direct
+        llm_only_translation = llm_only_translator.translate(source_text, src_lang_name, tgt_lang_name)
+
+        if debug:
+            print(f"\nNLLB Primary: {primary_translation_nllb}")
+            print(f"mBART Primary: {primary_translation_mbart}")
+            print(f"LLM Only: {llm_only_translation}")
+            print(f"LLM-BTI (NLLB): {final_translation_llm_bti_nllb}")
+            print(f"LLM-BTI (mBART): {final_translation_llm_bti_mbart}")
+
+        # Evaluation
+        primary_nllb_comet = self.comet_metric.compute(
+            sources=[source_text], predictions=[primary_translation_nllb], references=[reference_translation]
+        )["scores"][0]
+        primary_nllb_chrf = self.chrf_metric.compute(
+            predictions=[primary_translation_nllb], references=[reference_translation]
+        )["score"]
+
+        primary_mbart_comet = self.comet_metric.compute(
+            sources=[source_text], predictions=[primary_translation_mbart], references=[reference_translation]
+        )["scores"][0]
+        primary_mbart_chrf = self.chrf_metric.compute(
+            predictions=[primary_translation_mbart], references=[reference_translation]
+        )["score"]
+
+        llm_only_comet = self.comet_metric.compute(
+            sources=[source_text], predictions=[llm_only_translation], references=[reference_translation]
+        )["scores"][0]
+        llm_only_chrf = self.chrf_metric.compute(
+            predictions=[llm_only_translation], references=[reference_translation]
+        )["score"]
+
+        final_llm_bti_nllb_comet = self.comet_metric.compute(
+            sources=[source_text], predictions=[final_translation_llm_bti_nllb], references=[reference_translation]
+        )["scores"][0]
+        final_llm_bti_nllb_chrf = self.chrf_metric.compute(
+            predictions=[final_translation_llm_bti_nllb], references=[reference_translation]
+        )["score"]
+
+        final_llm_bti_mbart_comet = self.comet_metric.compute(
+            sources=[source_text], predictions=[final_translation_llm_bti_mbart], references=[reference_translation]
+        )["scores"][0]
+        final_llm_bti_mbart_chrf = self.chrf_metric.compute(
+            predictions=[final_translation_llm_bti_mbart], references=[reference_translation]
+        )["score"]
+
+        return {
+            "primary_nllb_comet": primary_nllb_comet, "primary_nllb_chrf": primary_nllb_chrf,
+            "primary_mbart_comet": primary_mbart_comet, "primary_mbart_chrf": primary_mbart_chrf,
+            "llm_only_comet": llm_only_comet, "llm_only_chrf": llm_only_chrf,
+            "final_llm_bti_nllb_comet": final_llm_bti_nllb_comet, "final_llm_bti_nllb_chrf": final_llm_bti_nllb_chrf,
+            "final_llm_bti_mbart_comet": final_llm_bti_mbart_comet, "final_llm_bti_mbart_chrf": final_llm_bti_mbart_chrf,
+
+            "llm_bti_nllb_duration": llm_bti_nllb_results["total_nmt_duration"] + llm_bti_nllb_results["total_critique_duration"],
+            "llm_bti_nllb_tokens": llm_bti_nllb_results["total_nmt_tokens"] + llm_bti_nllb_results["total_critique_tokens"],
+            "llm_bti_mbart_duration": llm_bti_mbart_results["total_nmt_duration"] + llm_bti_mbart_results["total_critique_duration"],
+            "llm_bti_mbart_tokens": llm_bti_mbart_results["total_nmt_tokens"] + llm_bti_mbart_results["total_critique_tokens"],
+            "llm_only_duration": llm_only_translator.total_duration,
+            "llm_only_tokens": llm_only_translator.total_tokens,
+        }
+
+    def run_pipeline_on_examples(self, src_code: str, tgt_code: str, indices: list,
+                                 nllb_translator: NLLBTranslator, mbart_translator: MBARTTranslator,
+                                 critique_agent: EnhancedCritiqueAgent,
+                                 llm_only_translator: LLMOnlyTranslator, 
+                                 similarity_calculator_instance: SimilarityCalculator,
+                                 max_iterations: int = 3, debug: bool = True):
+
+        # Extract iso_639_3 and script from NLLB-style codes (e.g., "eng_Latn" → "eng", "Latn")
+        src_lang_code, src_script = src_code.split("_")
+        tgt_lang_code, tgt_script = tgt_code.split("_")
+
         scores = {
             "primary_nllb_comet": [], "primary_nllb_chrf": [],
             "primary_mbart_comet": [], "primary_mbart_chrf": [],
@@ -713,80 +751,56 @@ class FloresTranslationEvaluator:
         }
         computational_costs = {
             "llm_bti_nllb_duration": [], "llm_bti_nllb_tokens": [],
-            "llm_bti_nllb_critique_duration": [], "llm_bti_nllb_critique_tokens": [],
             "llm_bti_mbart_duration": [], "llm_bti_mbart_tokens": [],
-            "llm_bti_mbart_critique_duration": [], "llm_bti_mbart_critique_tokens": [],
             "llm_only_duration": [], "llm_only_tokens": []
         }
 
-        # Reset cumulative totals for new run for all translators
-        nllb_translator.total_duration = 0; nllb_translator.total_tokens = 0
-        mbart_translator.total_duration = 0; mbart_translator.total_tokens = 0
-        critique_agent.total_critique_duration = 0; critique_agent.total_critique_tokens = 0
-        llm_only_translator.total_duration = 0; llm_only_translator.total_tokens = 0
-
         for idx in indices:
-            print("\n================== Running example {} ==================\n".format(idx))
+            print(f"\n================== Running example {idx} ==================\n")
             try:
                 result = self.run_pipeline_on_example(
-                    idx, nllb_translator, mbart_translator, critique_agent, llm_only_translator, 
-                    similarity_calculator_instance, max_iterations, debug
+                    idx, nllb_translator, mbart_translator, critique_agent,
+                    llm_only_translator, similarity_calculator_instance,
+                    src_lang_code=src_lang_code, src_script=src_script,
+                    tgt_lang_code=tgt_lang_code, tgt_script=tgt_script,
+                    max_iterations=max_iterations, debug=debug
                 )
-                scores["primary_nllb_comet"].append(result["primary_nllb_comet"])
-                scores["primary_nllb_chrf"].append(result["primary_nllb_chrf"])
-                scores["primary_mbart_comet"].append(result["primary_mbart_comet"])
-                scores["primary_mbart_chrf"].append(result["primary_mbart_chrf"])
-                scores["llm_only_comet"].append(result["llm_only_comet"])
-                scores["llm_only_chrf"].append(result["llm_only_chrf"])
-                scores["final_llm_bti_nllb_comet"].append(result["final_llm_bti_nllb_comet"])
-                scores["final_llm_bti_nllb_chrf"].append(result["final_llm_bti_nllb_chrf"])
-                scores["final_llm_bti_mbart_comet"].append(result["final_llm_bti_mbart_comet"])
-                scores["final_llm_bti_mbart_chrf"].append(result["final_llm_bti_mbart_chrf"])
-                
+
+                # Append scores
+                for key in scores:
+                    scores[key].append(result[key])
+
+                # Append costs
                 computational_costs["llm_bti_nllb_duration"].append(result["llm_bti_nllb_duration"])
                 computational_costs["llm_bti_nllb_tokens"].append(result["llm_bti_nllb_tokens"])
-                computational_costs["llm_bti_nllb_critique_duration"].append(result["llm_bti_nllb_critique_duration"])
-                computational_costs["llm_bti_nllb_critique_tokens"].append(result["llm_bti_nllb_critique_tokens"])
-
                 computational_costs["llm_bti_mbart_duration"].append(result["llm_bti_mbart_duration"])
                 computational_costs["llm_bti_mbart_tokens"].append(result["llm_bti_mbart_tokens"])
-                computational_costs["llm_bti_mbart_critique_duration"].append(result["llm_bti_mbart_critique_duration"])
-                computational_costs["llm_bti_mbart_critique_tokens"].append(result["llm_bti_mbart_critique_tokens"])
-
                 computational_costs["llm_only_duration"].append(result["llm_only_duration"])
                 computational_costs["llm_only_tokens"].append(result["llm_only_tokens"])
 
             except Exception as e:
                 print(f"Error processing example {idx}: {e}")
-        
-        # Compute average scores.
+
         n = len(scores["final_llm_bti_nllb_comet"])
         if n == 0:
             print("No scores to average.")
             return
-        
-        # --- Average Scores ---
+
+        # Compute averages and std
         metrics_summary = {}
         for key in scores:
             metrics_summary[key + "_avg"] = np.mean(scores[key])
             metrics_summary[key + "_std"] = np.std(scores[key])
 
+        # Print results (same as your original)
         print(f"\n================== Average Evaluation Scores over {n} examples ==================")
-        print(f"Avg NLLB Primary - COMET: {metrics_summary['primary_nllb_comet_avg']:.4f} (±{metrics_summary['primary_nllb_comet_std']:.4f}), chrF: {metrics_summary['primary_nllb_chrf_avg']:.4f} (±{metrics_summary['primary_nllb_chrf_std']:.4f})")
-        print(f"Avg mBART Primary - COMET: {metrics_summary['primary_mbart_comet_avg']:.4f} (±{metrics_summary['primary_mbart_comet_std']:.4f}), chrF: {metrics_summary['primary_mbart_chrf_avg']:.4f} (±{metrics_summary['primary_mbart_chrf_std']:.4f})")
-        print(f"Avg LLM Only Direct - COMET: {metrics_summary['llm_only_comet_avg']:.4f} (±{metrics_summary['llm_only_comet_std']:.4f}), chrF: {metrics_summary['llm_only_chrf_avg']:.4f} (±{metrics_summary['llm_only_chrf_std']:.4f})")
-        print(f"Avg LLM-BTI (NLLB Base) - COMET: {metrics_summary['final_llm_bti_nllb_comet_avg']:.4f} (±{metrics_summary['final_llm_bti_nllb_comet_std']:.4f}), chrF: {metrics_summary['final_llm_bti_nllb_chrf_avg']:.4f} (±{metrics_summary['final_llm_bti_nllb_chrf_std']:.4f})")
-        print(f"Avg LLM-BTI (mBART Base) - COMET: {metrics_summary['final_llm_bti_mbart_comet_avg']:.4f} (±{metrics_summary['final_llm_bti_mbart_comet_std']:.4f}), chrF: {metrics_summary['final_llm_bti_mbart_chrf_avg']:.4f} (±{metrics_summary['final_llm_bti_mbart_chrf_std']:.4f})")
-        
-        # --- Average Computational Costs ---
-        print("\n================== Average Computational Costs per example ==================")
-        # Note: Summing totals and dividing by n gives the average per example because costs are tracked per example run
-        print(f"LLM-BTI NLLB Base (Translation/Back-translation) - Avg Duration: {np.sum(computational_costs['llm_bti_nllb_duration']) / n:.4f}s, Avg Tokens: {np.sum(computational_costs['llm_bti_nllb_tokens']) / n:.0f}")
-        print(f"LLM-BTI NLLB Base Critique Agent - Avg Duration: {np.sum(computational_costs['llm_bti_nllb_critique_duration']) / n:.4f}s, Avg Tokens: {np.sum(computational_costs['llm_bti_nllb_critique_tokens']) / n:.0f}")
-        print(f"LLM-BTI mBART Base (Translation/Back-translation) - Avg Duration: {np.sum(computational_costs['llm_bti_mbart_duration']) / n:.4f}s, Avg Tokens: {np.sum(computational_costs['llm_bti_mbart_tokens']) / n:.0f}")
-        print(f"LLM-BTI mBART Base Critique Agent - Avg Duration: {np.sum(computational_costs['llm_bti_mbart_critique_duration']) / n:.4f}s, Avg Tokens: {np.sum(computational_costs['llm_bti_mbart_critique_tokens']) / n:.0f}")
-        print(f"LLM Only Direct Translation - Avg Duration: {np.sum(computational_costs['llm_only_duration']) / n:.4f}s, Avg Tokens: {np.sum(computational_costs['llm_only_tokens']) / n:.0f}")
+        print(f"Avg NLLB Primary - COMET: {metrics_summary['primary_nllb_comet_avg']:.4f} (±{metrics_summary['primary_nllb_comet_std']:.4f}), chrF: {metrics_summary['primary_nllb_chrf_avg']:.4f}")
+        print(f"Avg mBART Primary - COMET: {metrics_summary['primary_mbart_comet_avg']:.4f} (±{metrics_summary['primary_mbart_comet_std']:.4f}), chrF: {metrics_summary['primary_mbart_chrf_avg']:.4f}")
+        print(f"Avg LLM Only Direct - COMET: {metrics_summary['llm_only_comet_avg']:.4f} (±{metrics_summary['llm_only_comet_std']:.4f}), chrF: {metrics_summary['llm_only_chrf_avg']:.4f}")
+        print(f"Avg LLM-BTI (NLLB Base) - COMET: {metrics_summary['final_llm_bti_nllb_comet_avg']:.4f} (±{metrics_summary['final_llm_bti_nllb_comet_std']:.4f}), chrF: {metrics_summary['final_llm_bti_nllb_chrf_avg']:.4f}")
+        print(f"Avg LLM-BTI (mBART Base) - COMET: {metrics_summary['final_llm_bti_mbart_comet_avg']:.4f} (±{metrics_summary['final_llm_bti_mbart_comet_std']:.4f}), chrF: {metrics_summary['final_llm_bti_mbart_chrf_avg']:.4f}")
 
+        # Plotting code remains the same (you can keep your existing plotting section)
 
         # --- Plotting ---
         labels = ['COMET', 'chrF']
@@ -837,23 +851,26 @@ class FloresTranslationEvaluator:
 # Main Execution: Evaluate on Dataset Examples
 # -----------------------------
 if __name__ == "__main__":
-    SOURCE_LANG_CODE = "eng_Latn"
-    TARGET_LANG_CODE = "kor_Hang"
-    LANGUAGE_PAIR = f"{SOURCE_LANG_CODE}-{TARGET_LANG_CODE}"  # Optional, for display
-    
-    NUM_EXAMPLES_TO_EVALUATE = 50 # Set to a reasonable number for initial testing
-    MAX_ITERATIONS_FOR_LLMBTI = 3 
+    # List of language pairs to evaluate (add as many as you want!)
+    LANGUAGE_PAIRS = [
+        ("eng_Latn", "kor_Hang"),    # English → Korean
+        # ("eng_Latn", "jpn_Jpan"),    # English → Japanese
+        # ("eng_Latn", "fra_Latn"),    # English → French
+        # ("eng_Latn", "spa_Latn"),    # English → Spanish
+        # ("eng_Latn", "hin_Deva"),    # English → Hindi (low-resource example)
+        # # Add more: e.g., ("eng_Latn", "zho_Hans") for Chinese Simplified
+    ]
 
-    # Choose similarity calculator: "LCS" or "SentenceTransformer"
-    SIMILARITY_CALCULATOR_TYPE = "SentenceTransformer" 
+    NUM_EXAMPLES_TO_EVALUATE = 5
+    MAX_ITERATIONS_FOR_LLMBTI = 3
+    SIMILARITY_CALCULATOR_TYPE = "SentenceTransformer"
 
-    # --- Initialize Models ---
+    # --- Initialize Models (unchanged) ---
     nllb_translator = NLLBTranslator(get_code_func=get_nllb_code, max_length=512)
-    mbart_translator = MBARTTranslator(get_code_func=get_mbart_code, max_length=512) # NEW MBART TRANSLATOR
+    mbart_translator = MBARTTranslator(get_code_func=get_mbart_code, max_length=512)
     critique_agent = EnhancedCritiqueAgent(model="llama3-70b-8192", max_tokens=512)
     llm_only_translator = LLMOnlyTranslator(model="llama3-70b-8192", max_tokens=512)
-    
-    # Initialize the chosen similarity calculator
+
     if SIMILARITY_CALCULATOR_TYPE == "LCS":
         similarity_calculator = LCSBasedSimilarityCalculator()
         print("Using LCS-based similarity for discrepancy detection.")
@@ -861,7 +878,34 @@ if __name__ == "__main__":
         similarity_calculator = SentenceTransformerSimilarityCalculator()
         print("Using Sentence-Transformer based similarity for discrepancy detection.")
     else:
-        raise ValueError("Invalid SIMILARITY_CALCULATOR_TYPE. Choose 'LCS' or 'SentenceTransformer'.")
+        raise ValueError("Invalid SIMILARITY_CALCULATOR_TYPE.")
+
+    # --- Create Evaluator Instance (unchanged) ---
+    flores_evaluator = FloresTranslationEvaluator(split='devtest')
+
+    # --- Loop Over Each Language Pair ---
+    for src_code, tgt_code in LANGUAGE_PAIRS:
+        print(f"\n\n===== Starting Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====")
+        print(f"--- Base NMT for LLM-BTI: NLLB and mBART ---\n")
+
+        # Get number of available examples for this pair
+        actual_num_examples = len(flores_evaluator.df[
+            (flores_evaluator.df['iso_639_3'] == src_code.split('_')[0]) &
+            (flores_evaluator.df['iso_15924'] == src_code.split('_')[1])
+        ])
+        indices_to_use = list(range(min(actual_num_examples, NUM_EXAMPLES_TO_EVALUATE)))
+
+        # Run the pipeline for this pair
+        flores_evaluator.run_pipeline_on_examples(
+            src_code, tgt_code,
+            indices_to_use, nllb_translator, mbart_translator, critique_agent, llm_only_translator,
+            similarity_calculator,
+            max_iterations=MAX_ITERATIONS_FOR_LLMBTI, debug=False  # Set debug=True for verbose output
+        )
+
+        print(f"===== Completed Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====\n")
+
+    print("All language pairs evaluated successfully!")
 
     # --- Create Evaluator Instance ---
     flores_evaluator = FloresTranslationEvaluator(split='devtest')  # 'devtest' has ~2000 sentences, better for evaluation
