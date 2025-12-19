@@ -575,15 +575,15 @@ class ConvergentBackTranslationImprover:
 # FloresTranslationEvaluator Class
 # -----------------------------
 class FloresTranslationEvaluator: 
-    def __init__(self, dataset_name="Muennighoff/flores200", split='devtest'):  # or 'devtest' for more sentences
+    def __init__(self, dataset_name="openlanguagedata/flores_plus", split='devtest'):
         self.dataset_name = dataset_name
-        self.split = split  # e.g., 'dev' or 'devtest'
+        self.split = split  # 'dev' (~1000 sentences) or 'devtest' (~1012 sentences)
 
-        print(f"Loading dataset '{dataset_name}' split '{split}'...")
-        # Load full dataset (all languages)
+        print(f"Loading dataset '{dataset_name}' split '{split}' (all languages)...")
+        # Loads the full multilingual table for the chosen split
         self.dataset = load_dataset(self.dataset_name, split=self.split)
 
-        # Metrics remain the same
+        # Metrics unchanged
         self.comet_metric = evaluate.load("comet", config_name="wmt20-comet-da")
         self.chrf_metric = evaluate.load("chrf")
     def run_pipeline_on_example(self, index: int, nllb_translator: NLLBTranslator, 
@@ -593,14 +593,6 @@ class FloresTranslationEvaluator:
                                 similarity_calculator_instance: SimilarityCalculator, # Passed for LLM-BTI
                                 max_iterations: int = 3, debug: bool = True) -> dict:
         
-        split = None
-        for candidate in ['test', 'dev', 'train']:
-            if candidate in self.dataset:
-                split = candidate
-                break
-        if split is None:
-            raise ValueError("No suitable split found in the dataset.")
-
         example = self.dataset[index]
 
         src_code = "eng_Latn"   # Full NLLB-style code
@@ -612,13 +604,7 @@ class FloresTranslationEvaluator:
         # Optional: Get human-readable names (your existing functions work)
         src_lang_name = get_nllb_lang_name(src_code)   # Returns "English"
         tgt_lang_name = get_nllb_lang_name(tgt_code)   # Returns "Korean"
-        
-        source_text = example["translation"].get(src_code)
-        reference_translation = example["translation"].get(tgt_code)
-        
-        if source_text is None or reference_translation is None:
-            raise KeyError(f"Expected language keys '{src_code}' and/or '{tgt_code}' not found in dataset example.")
-
+ 
         print(f"\nSource text ({src_lang_name}) from dataset:")
         print(source_text)
         print(f"\nReference translation ({tgt_lang_name}) from dataset:")
@@ -880,16 +866,7 @@ if __name__ == "__main__":
     # --- Create Evaluator Instance ---
     flores_evaluator = FloresTranslationEvaluator(split='devtest')  # 'devtest' has ~2000 sentences, better for evaluation
     
-    # --- Run Evaluation ---
-    split_name = None
-    for candidate in ['test', 'dev', 'train']:
-        if candidate in flores_evaluator.dataset:
-            split_name = candidate
-            break
-    if split_name is None:
-        raise ValueError("No suitable split found in the dataset.")
-
-    actual_num_examples = len(flores_evaluator.dataset[split_name])
+    actual_num_examples = len(flores_evaluator.dataset)
     indices_to_use = list(range(min(actual_num_examples, NUM_EXAMPLES_TO_EVALUATE)))
     print(f"\n--- Starting evaluation on {len(indices_to_use)} examples for {get_nllb_lang_name(SOURCE_LANG_CODE)} to {get_nllb_lang_name(TARGET_LANG_CODE)} ---")
     print(f"--- Base NMT for LLM-BTI: NLLB and mBART ---")
