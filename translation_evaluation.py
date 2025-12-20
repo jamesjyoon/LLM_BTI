@@ -520,7 +520,7 @@ class ConvergentBackTranslationImprover:
             previous_similarity = current_similarity
             
             # Refine using critique agent
-            refined_translation = self..refine_with_discrepancies(
+            refined_translation = self.critique_agent.refine_with_discrepancies(
                 current_translation, source_text, back_translation, discrepancies, src_lang_name, tgt_lang_name
             )
             print("\nRefined Translation (LLM-BTI):")
