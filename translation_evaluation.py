@@ -526,10 +526,10 @@ class ConvergentBackTranslationImprover:
             print("\nRefined Translation (LLM-BTI):")
             print(refined_translation)
             
-            results["total_critique_duration"] += self..total_critique_duration
-            results["total_critique_tokens"] += self..total_critique_tokens
-            self..total_critique_duration = 0 # Reset
-            self..total_critique_tokens = 0 # Reset
+            results["total_critique_duration"] += self.critique_agent.total_critique_duration
+            results["total_critique_tokens"] += self.critique_agent.total_critique_tokens
+            self.critique_agent.total_critique_duration = 0 # Reset
+            self.critique_agent.total_critique_tokens = 0 # Reset
 
             if refined_translation.strip() == current_translation.strip():
                 print("No meaningful change detected by LLM. Ending iterations.\n")
