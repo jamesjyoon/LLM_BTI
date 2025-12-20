@@ -899,9 +899,12 @@ if __name__ == "__main__":
         # Run the pipeline for this pair
         flores_evaluator.run_pipeline_on_examples(
             src_code, tgt_code,
-            indices_to_use, nllb_translator, mbart_translator, critique_agent, llm_only_translator,
-            similarity_calculator,
-            max_iterations=MAX_ITERATIONS_FOR_LLMBTI, debug=True  # Set debug=True for verbose output
+            indices_to_use,
+            nllb_translator, mbart_translator,
+            critique_agent,
+            llm_only_translator, 
+            similarity_calculator_instance=similarity_calculator,  # Add this
+            max_iterations=MAX_ITERATIONS_FOR_LLMBTI, debug=True
         )
 
         print(f"===== Completed Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====\n")
