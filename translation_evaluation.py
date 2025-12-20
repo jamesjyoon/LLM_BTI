@@ -734,7 +734,7 @@ class FloresTranslationEvaluator:
 
     def run_pipeline_on_examples(self, src_code: str, tgt_code: str, indices: list,
                                  nllb_translator: NLLBTranslator, mbart_translator: MBARTTranslator,
-                                 : EnhancedCritiqueAgent,
+                                 critique_agent: EnhancedCritiqueAgent,
                                  llm_only_translator: LLMOnlyTranslator, 
                                  similarity_calculator_instance: SimilarityCalculator,
                                  max_iterations: int = 3, debug: bool = True):
