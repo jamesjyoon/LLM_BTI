@@ -760,7 +760,7 @@ class FloresTranslationEvaluator:
             print(f"\n================== Running example {idx} ==================\n")
             try:
                 result = self.run_pipeline_on_example(
-                    idx, nllb_translator, mbart_translator, ,
+                    idx, nllb_translator, mbart_translator, critique_agent,
                     llm_only_translator, similarity_calculator_instance,
                     src_lang_code=src_lang_code, src_script=src_script,
                     tgt_lang_code=tgt_lang_code, tgt_script=tgt_script,
