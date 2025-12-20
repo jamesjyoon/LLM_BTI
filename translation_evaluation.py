@@ -594,7 +594,7 @@ class FloresTranslationEvaluator:
     def run_pipeline_on_example(self, index: int, 
                                 nllb_translator: NLLBTranslator, 
                                 mbart_translator: MBARTTranslator, 
-                                : EnhancedCritiqueAgent,
+                                critique_agent: EnhancedCritiqueAgent,
                                 llm_only_translator: LLMOnlyTranslator, 
                                 similarity_calculator_instance: SimilarityCalculator,
                                 src_lang_code: str = "eng",   # iso_639_3
@@ -636,15 +636,15 @@ class FloresTranslationEvaluator:
         nllb_translator.total_tokens = 0
         mbart_translator.total_duration = 0
         mbart_translator.total_tokens = 0
-        .total_critique_duration = 0
-        .total_critique_tokens = 0
+        critique_agent.total_critique_duration = 0
+        critique_agent.total_critique_tokens = 0
         llm_only_translator.total_duration = 0
         llm_only_translator.total_tokens = 0
 
         # 1. LLM-BTI with NLLB
         print("\n--- Running LLM-BTI (NLLB as base) ---")
         llm_bti_nllb_improver = ConvergentBackTranslationImprover(
-            nllb_translator, , similarity_calculator_instance
+            nllb_translator, critique_agent, similarity_calculator_instance
         )
         llm_bti_nllb_results = llm_bti_nllb_improver.improve_translation(
             source_text, src_lang_name, tgt_lang_name,
@@ -656,7 +656,7 @@ class FloresTranslationEvaluator:
         # 2. LLM-BTI with mBART
         print("\n--- Running LLM-BTI (mBART as base) ---")
         llm_bti_mbart_improver = ConvergentBackTranslationImprover(
-            mbart_translator, , similarity_calculator_instance
+            mbart_translator, critique_agent, similarity_calculator_instance
         )
         llm_bti_mbart_results = llm_bti_mbart_improver.improve_translation(
             source_text, src_lang_name, tgt_lang_name,
