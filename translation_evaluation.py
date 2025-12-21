@@ -612,7 +612,7 @@ class FloresTranslationEvaluator:
         self.dataset_name = dataset_name
         self.split = split
 
-        print(f"Loading dataset '{dataset_name}' split '{split}' (all languages)...")
+        # print(f"Loading dataset '{dataset_name}' split '{split}' (all languages)...")
         # Load the full multilingual dataset for the chosen split
         self.dataset = load_dataset(self.dataset_name, split=self.split)
 
@@ -623,6 +623,8 @@ class FloresTranslationEvaluator:
         # Metrics unchanged
         self.comet_metric = evaluate.load("comet", config_name="wmt20-comet-da")
         self.chrf_metric = evaluate.load("chrf")
+        self.bleu_metric = evaluate.load("bleu")
+        self.bertscore_metric = evaluate.load("bertscore")
     def run_pipeline_on_example(self, index: int, 
                                 nllb_translator: NLLBTranslator, 
                                 mbart_translator: MBARTTranslator, 
@@ -674,7 +676,7 @@ class FloresTranslationEvaluator:
         llm_only_translator.total_tokens = 0
 
         # 1. LLM-BTI with NLLB
-        print("\n--- Running LLM-BTI (NLLB as base) ---")
+        #print("\n--- Running LLM-BTI (NLLB as base) ---")
         llm_bti_nllb_improver = ConvergentBackTranslationImprover(
             nllb_translator, critique_agent, similarity_calculator_instance
         )
@@ -686,7 +688,7 @@ class FloresTranslationEvaluator:
         final_translation_llm_bti_nllb = llm_bti_nllb_results["final_translation"]
 
         # 2. LLM-BTI with mBART
-        print("\n--- Running LLM-BTI (mBART as base) ---")
+        #print("\n--- Running LLM-BTI (mBART as base) ---")
         llm_bti_mbart_improver = ConvergentBackTranslationImprover(
             mbart_translator, critique_agent, similarity_calculator_instance
         )
@@ -749,12 +751,45 @@ class FloresTranslationEvaluator:
             predictions=[final_translation_llm_bti_mbart], references=[reference_translation]
         )["score"]
 
+        # BLEU (standard SacreBLEU-style, but using the basic 'bleu' for simplicity)
+        # References must be list of lists for multiple refs, but we have one → [[reference]]
+        primary_nllb_bleu = self.bleu_metric.compute(predictions=[primary_translation_nllb], references=[[reference_translation]])["bleu"] * 100  # Scale to 0-100
+        primary_mbart_bleu = self.bleu_metric.compute(predictions=[primary_translation_mbart], references=[[reference_translation]])["bleu"] * 100
+        llm_only_bleu = self.bleu_metric.compute(predictions=[llm_only_translation], references=[[reference_translation]])["bleu"] * 100
+        final_llm_bti_nllb_bleu = self.bleu_metric.compute(predictions=[final_translation_llm_bti_nllb], references=[[reference_translation]])["bleu"] * 100
+        final_llm_bti_mbart_bleu = self.bleu_metric.compute(predictions=[final_translation_llm_bti_mbart], references=[[reference_translation]])["bleu"] * 100
+
+        # BERTScore (use F1; lang code for better model selection – adjust per target language)
+        tgt_lang_code = tgt_code.split("_")[0]  # e.g., "kor" or "jpn"
+        bertscore_results = self.bertscore_metric.compute(
+            predictions=[primary_translation_nllb, primary_translation_mbart, llm_only_translation, final_translation_llm_bti_nllb, final_translation_llm_bti_mbart],
+            references=[reference_translation] * 5,
+            lang=tgt_lang_code  # Auto-selects best multilingual model (supports Korean, Japanese, etc.)
+        )
+        primary_nllb_bertscore = bertscore_results["f1"][0] * 100
+        primary_mbart_bertscore = bertscore_results["f1"][1] * 100
+        llm_only_bertscore = bertscore_results["f1"][2] * 100
+        final_llm_bti_nllb_bertscore = bertscore_results["f1"][3] * 100
+        final_llm_bti_mbart_bertscore = bertscore_results["f1"][4] * 100
+                                    
         return {
             "primary_nllb_comet": primary_nllb_comet, "primary_nllb_chrf": primary_nllb_chrf,
             "primary_mbart_comet": primary_mbart_comet, "primary_mbart_chrf": primary_mbart_chrf,
             "llm_only_comet": llm_only_comet, "llm_only_chrf": llm_only_chrf,
             "final_llm_bti_nllb_comet": final_llm_bti_nllb_comet, "final_llm_bti_nllb_chrf": final_llm_bti_nllb_chrf,
             "final_llm_bti_mbart_comet": final_llm_bti_mbart_comet, "final_llm_bti_mbart_chrf": final_llm_bti_mbart_chrf,
+
+            "primary_nllb_bleu": primary_nllb_bleu,
+            "primary_mbart_bleu": primary_mbart_bleu,
+            "llm_only_bleu": llm_only_bleu,
+            "final_llm_bti_nllb_bleu": final_llm_bti_nllb_bleu,
+            "final_llm_bti_mbart_bleu": final_llm_bti_mbart_bleu,
+
+            "primary_nllb_bertscore": primary_nllb_bertscore,
+            "primary_mbart_bertscore": primary_mbart_bertscore,
+            "llm_only_bertscore": llm_only_bertscore,
+            "final_llm_bti_nllb_bertscore": final_llm_bti_nllb_bertscore,
+            "final_llm_bti_mbart_bertscore": final_llm_bti_mbart_bertscore,
 
             "llm_bti_nllb_duration": llm_bti_nllb_results["total_nmt_duration"] + llm_bti_nllb_results["total_critique_duration"],
             "llm_bti_nllb_tokens": llm_bti_nllb_results["total_nmt_tokens"] + llm_bti_nllb_results["total_critique_tokens"],
@@ -781,6 +816,10 @@ class FloresTranslationEvaluator:
             "llm_only_comet": [], "llm_only_chrf": [],
             "final_llm_bti_nllb_comet": [], "final_llm_bti_nllb_chrf": [],
             "final_llm_bti_mbart_comet": [], "final_llm_bti_mbart_chrf": [],
+            "primary_nllb_bleu": [], "primary_mbart_bleu": [], "llm_only_bleu": [],
+            "final_llm_bti_nllb_bleu": [], "final_llm_bti_mbart_bleu": [],
+            "primary_nllb_bertscore": [], "primary_mbart_bertscore": [], "llm_only_bertscore": [],
+            "final_llm_bti_nllb_bertscore": [], "final_llm_bti_mbart_bertscore": [],
         }
         computational_costs = {
             "llm_bti_nllb_duration": [], "llm_bti_nllb_tokens": [],
@@ -789,7 +828,7 @@ class FloresTranslationEvaluator:
         }
 
         for idx in indices:
-            print(f"\n================== Running example {idx} ==================\n")
+            #print(f"\n================== Running example {idx} ==================\n")
             try:
                 result = self.run_pipeline_on_example(
                     idx, nllb_translator, mbart_translator, critique_agent,
@@ -828,52 +867,164 @@ class FloresTranslationEvaluator:
         # Print results (same as your original)
         print(f"\n================== Average Evaluation Scores over {n} examples ==================")
         print(f"Avg NLLB Primary - COMET: {metrics_summary['primary_nllb_comet_avg']:.4f} (±{metrics_summary['primary_nllb_comet_std']:.4f}), chrF: {metrics_summary['primary_nllb_chrf_avg']:.4f}")
+        print(f"Avg NLLB Primary - BLEU: {metrics_summary['primary_nllb_bleu_avg']:.2f} (±{metrics_summary['primary_nllb_bleu_std']:.2f}), BERTScore F1: {metrics_summary['primary_nllb_bertscore_avg']:.2f}")
+     
         print(f"Avg mBART Primary - COMET: {metrics_summary['primary_mbart_comet_avg']:.4f} (±{metrics_summary['primary_mbart_comet_std']:.4f}), chrF: {metrics_summary['primary_mbart_chrf_avg']:.4f}")
+        print(f"Avg mBART Primary - BLEU: {metrics_summary['primary_mbart_bleu_avg']:.2f} (±{metrics_summary['primary_mbart_bleu_std']:.2f}), BERTScore F1: {metrics_summary['primary_mbart_bertscore_avg']:.2f}")
+   
         print(f"Avg LLM Only Direct - COMET: {metrics_summary['llm_only_comet_avg']:.4f} (±{metrics_summary['llm_only_comet_std']:.4f}), chrF: {metrics_summary['llm_only_chrf_avg']:.4f}")
+        print(f"Avg LLM Only Primary - BLEU: {metrics_summary['llm_only_bleu_avg']:.2f} (±{metrics_summary['llm_only_bleu_std']:.2f}), BERTScore F1: {metrics_summary['llm_only_bertscore_avg']:.2f}")
+     
         print(f"Avg LLM-BTI (NLLB Base) - COMET: {metrics_summary['final_llm_bti_nllb_comet_avg']:.4f} (±{metrics_summary['final_llm_bti_nllb_comet_std']:.4f}), chrF: {metrics_summary['final_llm_bti_nllb_chrf_avg']:.4f}")
+        print(f"Avg LLM-BTI (NLLB Base) - BLEU: {metrics_summary['final_llm_bti_nllb_bleu_avg']:.2f} (±{metrics_summary['final_llm_bti_nllb_bleu_std']:.2f}), BERTScore F1: {metrics_summary['final_llm_bti_nllb_bertscore_avg']:.2f}")
+        
         print(f"Avg LLM-BTI (mBART Base) - COMET: {metrics_summary['final_llm_bti_mbart_comet_avg']:.4f} (±{metrics_summary['final_llm_bti_mbart_comet_std']:.4f}), chrF: {metrics_summary['final_llm_bti_mbart_chrf_avg']:.4f}")
-
-        # Plotting code remains the same (you can keep your existing plotting section)
-
-        # --- Plotting ---
-        labels = ['COMET', 'chrF']
-    
-        methods_data = [
-            ("NLLB Primary", [metrics_summary['primary_nllb_comet_avg'], metrics_summary['primary_nllb_chrf_avg']], [metrics_summary['primary_nllb_comet_std'], metrics_summary['primary_nllb_chrf_std']]),
-            ("mBART Primary", [metrics_summary['primary_mbart_comet_avg'], metrics_summary['primary_mbart_chrf_avg']], [metrics_summary['primary_mbart_comet_std'], metrics_summary['primary_mbart_chrf_std']]),
-            ("LLM Only Direct", [metrics_summary['llm_only_comet_avg'], metrics_summary['llm_only_chrf_avg']], [metrics_summary['llm_only_comet_std'], metrics_summary['llm_only_chrf_std']]),
-            ("LLM-BTI (NLLB Base)", [metrics_summary['final_llm_bti_nllb_comet_avg'], metrics_summary['final_llm_bti_nllb_chrf_avg']], [metrics_summary['final_llm_bti_nllb_comet_std'], metrics_summary['final_llm_bti_nllb_chrf_std']]),
-            ("LLM-BTI (mBART Base)", [metrics_summary['final_llm_bti_mbart_comet_avg'], metrics_summary['final_llm_bti_mbart_chrf_avg']], [metrics_summary['final_llm_bti_mbart_comet_std'], metrics_summary['final_llm_bti_mbart_chrf_std']]),
+        print(f"Avg LLM-BTI (mBART Base) - BLEU: {metrics_summary['final_llm_bti_mbart_bleu_avg']:.2f} (±{metrics_summary['final_llm_bti_mbart_bleu_std']:.2f}), BERTScore F1: {metrics_summary['final_llm_bti_mbart_bertscore_avg']:.2f}")
+      
+        # --- Separate Plots for COMET and chrF ---
+        methods = [
+            "NLLB Primary",
+            "mBART Primary",
+            "LLM Only Direct",
+            "LLM-BTI (NLLB Base)",
+            "LLM-BTI (mBART Base)",
         ]
     
-        x = np.arange(len(labels))
-        num_methods = len(methods_data)
-        bar_width = 0.8 / num_methods
+        comet_avgs = [
+            metrics_summary['primary_nllb_comet_avg'],
+            metrics_summary['primary_mbart_comet_avg'],
+            metrics_summary['llm_only_comet_avg'],
+            metrics_summary['final_llm_bti_nllb_comet_avg'],
+            metrics_summary['final_llm_bti_mbart_comet_avg'],
+        ]
     
-        fig, ax = plt.subplots(figsize=(12, 7))
+        comet_stds = [
+            metrics_summary['primary_nllb_comet_std'],
+            metrics_summary['primary_mbart_comet_std'],
+            metrics_summary['llm_only_comet_std'],
+            metrics_summary['final_llm_bti_nllb_comet_std'],
+            metrics_summary['final_llm_bti_mbart_comet_std'],
+        ]
     
-        for i, (method_name, avg_scores, std_scores) in enumerate(methods_data):
-            offset = bar_width * (i - (num_methods - 1) / 2)
-            rects = ax.bar(x + offset, avg_scores, bar_width, yerr=std_scores, capsize=5, label=method_name)
-            for rect in rects:
-                height = rect.get_height()
-                ax.annotate(f'{height:.2f}',
-                            xy=(rect.get_x() + rect.get_width() / 2, height),
-                            xytext=(0, 3),
-                            textcoords="offset points",
-                            ha='center', va='bottom', fontsize=8)
+        chrf_avgs = [
+            metrics_summary['primary_nllb_chrf_avg'],
+            metrics_summary['primary_mbart_chrf_avg'],
+            metrics_summary['llm_only_chrf_avg'],
+            metrics_summary['final_llm_bti_nllb_chrf_avg'],
+            metrics_summary['final_llm_bti_mbart_chrf_avg'],
+        ]
     
-        ax.set_ylabel('Average Scores')
+        chrf_stds = [
+            metrics_summary['primary_nllb_chrf_std'],
+            metrics_summary['primary_mbart_chrf_std'],
+            metrics_summary['llm_only_chrf_std'],
+            metrics_summary['final_llm_bti_nllb_chrf_std'],
+            metrics_summary['final_llm_bti_mbart_chrf_std'],
+        ]
+    
         src_name = get_nllb_lang_name(src_code)
         tgt_name = get_nllb_lang_name(tgt_code)
-        ax.set_title(f'Average Translation Scores: {src_name} → {tgt_name} (N={n})')
-        ax.set_xticks(x)
-        ax.set_xticklabels(labels)
-        ax.legend(loc='lower center', bbox_to_anchor=(0.5, -0.2), ncol=3, fontsize='small')
-        ax.grid(axis='y', linestyle='--', alpha=0.7)
+        title_suffix = f"{src_name} → {tgt_name} (N={n})"
     
-        fig.tight_layout()
-        plt.subplots_adjust(bottom=0.25)
+        x = np.arange(len(methods))
+        bar_width = 0.35
+    
+        # === Plot 1: COMET Scores ===
+        fig1, ax1 = plt.subplots(figsize=(10, 6))
+        bars1 = ax1.bar(x, comet_avgs, yerr=comet_stds, capsize=8, color='skyblue', edgecolor='black', alpha=0.8)
+        ax1.set_ylabel('COMET Score', fontsize=12)
+        ax1.set_title(f'COMET Scores: {title_suffix}', fontsize=14, fontweight='bold')
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(methods, rotation=45, ha='right', fontsize=10)
+        ax1.grid(axis='y', linestyle='--', alpha=0.7)
+    
+        # Add value labels on bars
+        for bar in bars1:
+            height = bar.get_height()
+            ax1.annotate(f'{height:.3f}',
+                         xy=(bar.get_x() + bar.get_width() / 2, height),
+                         xytext=(0, 5), textcoords="offset points",
+                         ha='center', va='bottom', fontsize=9, fontweight='bold')
+    
+        fig1.tight_layout()
+        comet_filename = f"comet_scores_{src_code}_to_{tgt_code}.png"
+        plt.savefig(comet_filename, dpi=300, bbox_inches='tight')
+        print(f"COMET plot saved as '{comet_filename}'")
+        plt.close(fig1)
+    
+        # === Plot 2: chrF Scores ===
+        fig2, ax2 = plt.subplots(figsize=(10, 6))
+        bars2 = ax2.bar(x, chrf_avgs, yerr=chrf_stds, capsize=8, color='lightcoral', edgecolor='black', alpha=0.8)
+        ax2.set_ylabel('chrF Score', fontsize=12)
+        ax2.set_title(f'chrF Scores: {title_suffix}', fontsize=14, fontweight='bold')
+        ax2.set_xticks(x)
+        ax2.set_xticklabels(methods, rotation=45, ha='right', fontsize=10)
+        ax2.grid(axis='y', linestyle='--', alpha=0.7)
+    
+        # Add value labels on bars
+        for bar in bars2:
+            height = bar.get_height()
+            ax2.annotate(f'{height:.2f}',
+                         xy=(bar.get_x() + bar.get_width() / 2, height),
+                         xytext=(0, 5), textcoords="offset points",
+                         ha='center', va='bottom', fontsize=9, fontweight='bold')
+    
+        fig2.tight_layout()
+        chrf_filename = f"chrf_scores_{src_code}_to_{tgt_code}.png"
+        plt.savefig(chrf_filename, dpi=300, bbox_inches='tight')
+        print(f"chrF plot saved as '{chrf_filename}'")
+        plt.close(fig2)
+        # === Plot 3: BLEU Scores ===
+        bleu_avgs = [
+            metrics_summary['primary_nllb_bleu_avg'],
+            metrics_summary['primary_mbart_bleu_avg'],
+            metrics_summary['llm_only_bleu_avg'],
+            metrics_summary['final_llm_bti_nllb_bleu_avg'],
+            metrics_summary['final_llm_bti_mbart_bleu_avg'],
+        ]
+        bleu_stds = [metrics_summary[k + '_std'] for k in ['primary_nllb_bleu', 'primary_mbart_bleu', 'llm_only_bleu', 'final_llm_bti_nllb_bleu', 'final_llm_bti_mbart_bleu']]
+    
+        fig3, ax3 = plt.subplots(figsize=(10, 6))
+        bars3 = ax3.bar(x, bleu_avgs, yerr=bleu_stds, capsize=8, color='mediumseagreen', edgecolor='black', alpha=0.8)
+        ax3.set_ylabel('BLEU Score (×100)', fontsize=12)
+        ax3.set_title(f'BLEU Scores: {title_suffix}', fontsize=14, fontweight='bold')
+        ax3.set_xticks(x)
+        ax3.set_xticklabels(methods, rotation=45, ha='right', fontsize=10)
+        ax3.grid(axis='y', linestyle='--', alpha=0.7)
+        for bar in bars3:
+            height = bar.get_height()
+            ax3.annotate(f'{height:.1f}', xy=(bar.get_x() + bar.get_width() / 2, height), xytext=(0, 5), textcoords="offset points", ha='center', va='bottom', fontsize=9, fontweight='bold')
+        fig3.tight_layout()
+        bleu_filename = f"bleu_scores_{src_code}_to_{tgt_code}.png"
+        plt.savefig(bleu_filename, dpi=300, bbox_inches='tight')
+        print(f"BLEU plot saved as '{bleu_filename}'")
+        plt.close(fig3)
+    
+        # === Plot 4: BERTScore (F1) ===
+        bertscore_avgs = [
+            metrics_summary['primary_nllb_bertscore_avg'],
+            metrics_summary['primary_mbart_bertscore_avg'],
+            metrics_summary['llm_only_bertscore_avg'],
+            metrics_summary['final_llm_bti_nllb_bertscore_avg'],
+            metrics_summary['final_llm_bti_mbart_bertscore_avg'],
+        ]
+        bertscore_stds = [metrics_summary[k + '_std'] for k in ['primary_nllb_bertscore', 'primary_mbart_bertscore', 'llm_only_bertscore', 'final_llm_bti_nllb_bertscore', 'final_llm_bti_mbart_bertscore']]
+    
+        fig4, ax4 = plt.subplots(figsize=(10, 6))
+        bars4 = ax4.bar(x, bertscore_avgs, yerr=bertscore_stds, capsize=8, color='orchid', edgecolor='black', alpha=0.8)
+        ax4.set_ylabel('BERTScore F1 (×100)', fontsize=12)
+        ax4.set_title(f'BERTScore F1: {title_suffix}', fontsize=14, fontweight='bold')
+        ax4.set_xticks(x)
+        ax4.set_xticklabels(methods, rotation=45, ha='right', fontsize=10)
+        ax4.grid(axis='y', linestyle='--', alpha=0.7)
+        for bar in bars4:
+            height = bar.get_height()
+            ax4.annotate(f'{height:.1f}', xy=(bar.get_x() + bar.get_width() / 2, height), xytext=(0, 5), textcoords="offset points", ha='center', va='bottom', fontsize=9, fontweight='bold')
+        fig4.tight_layout()
+        bertscore_filename = f"bertscore_f1_{src_code}_to_{tgt_code}.png"
+        plt.savefig(bertscore_filename, dpi=300, bbox_inches='tight')
+        print(f"BERTScore plot saved as '{bertscore_filename}'")
+        plt.close(fig4)
     
         # === SAVE THE PLOT TO FILE ===
         filename = f"translation_scores_{src_code}_to_{tgt_code}.png"
@@ -890,12 +1041,12 @@ if __name__ == "__main__":
     # List of language pairs to evaluate
     LANGUAGE_PAIRS = [
         ("eng_Latn", "kor_Hang"),    # English → Korean
-        # ("eng_Latn", "jpn_Jpan"),  # Uncomment to add more
+        ("eng_Latn", "jpn_Jpan"),  # Uncomment to add more
         # ("eng_Latn", "fra_Latn"),
         # ("eng_Latn", "hin_Deva"),
     ]
 
-    NUM_EXAMPLES_TO_EVALUATE = 50
+    NUM_EXAMPLES_TO_EVALUATE = 5
     MAX_ITERATIONS_FOR_LLMBTI = 3
 
     # Initialize models
@@ -954,77 +1105,3 @@ if __name__ == "__main__":
             plt.close('all')  # Clean up any open figures
 
     print("All language pairs processed!")
-# if __name__ == "__main__":
-#     # List of language pairs to evaluate (add as many as you want!)
-#     LANGUAGE_PAIRS = [
-#         ("eng_Latn", "kor_Hang"),    # English → Korean
-#         # ("eng_Latn", "jpn_Jpan"),    # English → Japanese
-#         # ("eng_Latn", "fra_Latn"),    # English → French
-#         # ("eng_Latn", "spa_Latn"),    # English → Spanish
-#         # ("eng_Latn", "hin_Deva"),    # English → Hindi (low-resource example)
-#         # # Add more: e.g., ("eng_Latn", "zho_Hans") for Chinese Simplified
-#     ]
-
-#     NUM_EXAMPLES_TO_EVALUATE = 5
-#     MAX_ITERATIONS_FOR_LLMBTI = 3
-#     SIMILARITY_CALCULATOR_TYPE = "SentenceTransformer"
-
-#     # --- Initialize Models (unchanged) ---
-#     nllb_translator = NLLBTranslator(get_code_func=get_nllb_code, max_length=512)
-#     mbart_translator = MBARTTranslator(get_code_func=get_mbart_code, max_length=512)
-#     critique_agent = EnhancedCritiqueAgent(model="llama-3.3-70b-versatile", max_tokens=512)
-#     llm_only_translator = LLMOnlyTranslator(model="llama-3.3-70b-versatile", max_tokens=512)
-
-#     if SIMILARITY_CALCULATOR_TYPE == "LCS":
-#         similarity_calculator = LCSBasedSimilarityCalculator()
-#         print("Using LCS-based similarity for discrepancy detection.")
-#     elif SIMILARITY_CALCULATOR_TYPE == "SentenceTransformer":
-#         similarity_calculator = SentenceTransformerSimilarityCalculator()
-#         print("Using Sentence-Transformer based similarity for discrepancy detection.")
-#     else:
-#         raise ValueError("Invalid SIMILARITY_CALCULATOR_TYPE.")
-
-#     # --- Create Evaluator Instance (unchanged) ---
-#     flores_evaluator = FloresTranslationEvaluator(split='devtest')
-
-#     # --- Loop Over Each Language Pair ---
-#     for src_code, tgt_code in LANGUAGE_PAIRS:
-#         try:
-#             print(f"\n\n===== Starting Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====")
-#             # ... calculate indices_to_use ...
-
-#             flores_evaluator.run_pipeline_on_examples(
-#                 src_code, tgt_code,
-#                 indices_to_use,
-#                 nllb_translator, mbart_translator,
-#                 critique_agent,
-#                 llm_only_translator,
-#                 similarity_calculator,
-#                 max_iterations=MAX_ITERATIONS_FOR_LLMBTI,
-#                 debug=False
-#             )
-#             print(f"===== Completed Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====\n")
-
-#         except Exception as e:
-#             print(f"!!! Error during evaluation of {src_code} → {tgt_code}: {e}")
-#             import traceback
-#             traceback.print_exc()  # Prints full error details
-#             print("Continuing to next language pair...\n")
-#         finally:
-#             # Optional cleanup (e.g., clear matplotlib figures or reset models)
-#             plt.close('all')  # Clears any lingering figures
-
-#     print("All language pairs processed (some may have failed).")
-
-#     # --- Create Evaluator Instance ---
-#     flores_evaluator = FloresTranslationEvaluator(split='devtest')  # 'devtest' has ~2000 sentences, better for evaluation
-    
-#     actual_num_examples = len(flores_evaluator.dataset)
-#     indices_to_use = list(range(min(actual_num_examples, NUM_EXAMPLES_TO_EVALUATE)))
-#     print(f"--- Base NMT for LLM-BTI: NLLB and mBART ---")
-
-#     flores_evaluator.run_pipeline_on_examples(
-#         indices_to_use, nllb_translator, mbart_translator, critique_agent, llm_only_translator, 
-#         similarity_calculator, # Pass the instance here
-#         max_iterations=MAX_ITERATIONS_FOR_LLMBTI, debug=False # Set debug=True for detailed output per example
-#     )
