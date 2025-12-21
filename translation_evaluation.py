@@ -470,9 +470,11 @@ class ConvergentBackTranslationImprover:
             print(primary_translation)
             print("=================================\n")
 
-        # Initial NMT back-translation
-        back_translation = self.translator.translate(primary_translation, tgt_lang_name, src_lang_name)
-        results["back_translations"].append(back_translation)
+        initial_similarity = self.similarity_calculator.calculate_similarity(source_text, back_translation)
+        results["similarity_scores"].append(initial_similarity)
+        # # Initial NMT back-translation
+        # back_translation = self.translator.translate(primary_translation, tgt_lang_name, src_lang_name)
+        # results["back_translations"].append(back_translation)
         
         if debug:
             print(f"===== INITIAL BACK TRANSLATION ({self.translator.name}) =====")
@@ -481,7 +483,8 @@ class ConvergentBackTranslationImprover:
         
         initial_similarity = self.similarity_calculator.calculate_similarity(source_text, back_translation)
         results["similarity_scores"].append(initial_similarity)
-        print(f"Initial similarity: {initial_similarity:.4f}")
+        if debug:
+            print(f"Initial similarity: {initial_similarity:.4f}")
 
         current_translation = primary_translation
         current_similarity = initial_similarity
@@ -523,8 +526,9 @@ class ConvergentBackTranslationImprover:
             refined_translation = self.critique_agent.refine_with_discrepancies(
                 current_translation, source_text, back_translation, discrepancies, src_lang_name, tgt_lang_name
             )
-            print("\nRefined Translation (LLM-BTI):")
-            print(refined_translation)
+            if debug:
+                print("\nRefined Translation (LLM-BTI):")
+                print(refined_translation)
             
             results["total_critique_duration"] += self.critique_agent.total_critique_duration
             results["total_critique_tokens"] += self.critique_agent.total_critique_tokens
@@ -805,9 +809,7 @@ class FloresTranslationEvaluator:
 
         # --- Plotting ---
         labels = ['COMET', 'chrF']
-        
-        # Data for each bar group
-        # Using a list of tuples to keep method name and its scores together for easy iteration
+    
         methods_data = [
             ("NLLB Primary", [metrics_summary['primary_nllb_comet_avg'], metrics_summary['primary_nllb_chrf_avg']], [metrics_summary['primary_nllb_comet_std'], metrics_summary['primary_nllb_chrf_std']]),
             ("mBART Primary", [metrics_summary['primary_mbart_comet_avg'], metrics_summary['primary_mbart_chrf_avg']], [metrics_summary['primary_mbart_comet_std'], metrics_summary['primary_mbart_chrf_std']]),
@@ -815,38 +817,43 @@ class FloresTranslationEvaluator:
             ("LLM-BTI (NLLB Base)", [metrics_summary['final_llm_bti_nllb_comet_avg'], metrics_summary['final_llm_bti_nllb_chrf_avg']], [metrics_summary['final_llm_bti_nllb_comet_std'], metrics_summary['final_llm_bti_nllb_chrf_std']]),
             ("LLM-BTI (mBART Base)", [metrics_summary['final_llm_bti_mbart_comet_avg'], metrics_summary['final_llm_bti_mbart_chrf_avg']], [metrics_summary['final_llm_bti_mbart_comet_std'], metrics_summary['final_llm_bti_mbart_chrf_std']]),
         ]
-
-        x = np.arange(len(labels))  # the label locations
+    
+        x = np.arange(len(labels))
         num_methods = len(methods_data)
-        bar_width = 0.8 / num_methods # Adjust width based on number of methods
-        
+        bar_width = 0.8 / num_methods
+    
         fig, ax = plt.subplots(figsize=(12, 7))
-        
-        # Plot bars for each method
+    
         for i, (method_name, avg_scores, std_scores) in enumerate(methods_data):
             offset = bar_width * (i - (num_methods - 1) / 2)
             rects = ax.bar(x + offset, avg_scores, bar_width, yerr=std_scores, capsize=5, label=method_name)
-            
-            # Add value labels on top of bars
             for rect in rects:
                 height = rect.get_height()
                 ax.annotate(f'{height:.2f}',
                             xy=(rect.get_x() + rect.get_width() / 2, height),
-                            xytext=(0, 3),  # 3 points vertical offset
+                            xytext=(0, 3),
                             textcoords="offset points",
-                            ha='center', va='bottom',
-                            fontsize=8)
-
+                            ha='center', va='bottom', fontsize=8)
+    
         ax.set_ylabel('Average Scores')
-        ax.set_title(f'Average Translation Scores: {get_nllb_lang_name(src_code)} to {get_nllb_lang_name(tgt_code)} (N={n})')
+        src_name = get_nllb_lang_name(src_code)
+        tgt_name = get_nllb_lang_name(tgt_code)
+        ax.set_title(f'Average Translation Scores: {src_name} → {tgt_name} (N={n})')
         ax.set_xticks(x)
         ax.set_xticklabels(labels)
-        ax.legend(loc='lower center', bbox_to_anchor=(0.5, -0.2), ncol=3, fontsize='small') # Place legend outside
+        ax.legend(loc='lower center', bbox_to_anchor=(0.5, -0.2), ncol=3, fontsize='small')
         ax.grid(axis='y', linestyle='--', alpha=0.7)
-        
+    
         fig.tight_layout()
-        plt.subplots_adjust(bottom=0.25) # Adjust subplot to make space for the legend
-        plt.show()
+        plt.subplots_adjust(bottom=0.25)
+    
+        # === SAVE THE PLOT TO FILE ===
+        filename = f"translation_scores_{src_code}_to_{tgt_code}.png"
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        print(f"Plot saved as '{filename}' in the current working directory.")
+    
+        # Optional: close to free memory (good when running many pairs)
+        plt.close(fig)
 
 # -----------------------------
 # Main Execution: Evaluate on Dataset Examples
@@ -886,30 +893,32 @@ if __name__ == "__main__":
 
     # --- Loop Over Each Language Pair ---
     for src_code, tgt_code in LANGUAGE_PAIRS:
-        print(f"\n\n===== Starting Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====")
-        print(f"--- Base NMT for LLM-BTI: NLLB and mBART ---\n")
+        try:
+            print(f"\n\n===== Starting Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====")
+            # ... calculate indices_to_use ...
 
-        # Get number of available examples for this pair
-        actual_num_examples = len(flores_evaluator.df[
-            (flores_evaluator.df['iso_639_3'] == src_code.split('_')[0]) &
-            (flores_evaluator.df['iso_15924'] == src_code.split('_')[1])
-        ])
-        indices_to_use = list(range(min(actual_num_examples, NUM_EXAMPLES_TO_EVALUATE)))
+            flores_evaluator.run_pipeline_on_examples(
+                src_code, tgt_code,
+                indices_to_use,
+                nllb_translator, mbart_translator,
+                critique_agent,
+                llm_only_translator,
+                similarity_calculator,
+                max_iterations=MAX_ITERATIONS_FOR_LLMBTI,
+                debug=False
+            )
+            print(f"===== Completed Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====\n")
 
-        # Run the pipeline for this pair
-        flores_evaluator.run_pipeline_on_examples(
-            src_code, tgt_code,
-            indices_to_use,
-            nllb_translator, mbart_translator,
-            critique_agent,
-            llm_only_translator, 
-            similarity_calculator_instance=similarity_calculator,  # Add this
-            max_iterations=MAX_ITERATIONS_FOR_LLMBTI, debug=True
-        )
+        except Exception as e:
+            print(f"!!! Error during evaluation of {src_code} → {tgt_code}: {e}")
+            import traceback
+            traceback.print_exc()  # Prints full error details
+            print("Continuing to next language pair...\n")
+        finally:
+            # Optional cleanup (e.g., clear matplotlib figures or reset models)
+            plt.close('all')  # Clears any lingering figures
 
-        print(f"===== Completed Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====\n")
-
-    print("All language pairs evaluated successfully!")
+    print("All language pairs processed (some may have failed).")
 
     # --- Create Evaluator Instance ---
     flores_evaluator = FloresTranslationEvaluator(split='devtest')  # 'devtest' has ~2000 sentences, better for evaluation
@@ -921,5 +930,5 @@ if __name__ == "__main__":
     flores_evaluator.run_pipeline_on_examples(
         indices_to_use, nllb_translator, mbart_translator, critique_agent, llm_only_translator, 
         similarity_calculator, # Pass the instance here
-        max_iterations=MAX_ITERATIONS_FOR_LLMBTI, debug=True # Set debug=True for detailed output per example
+        max_iterations=MAX_ITERATIONS_FOR_LLMBTI, debug=False # Set debug=True for detailed output per example
     )
