@@ -438,8 +438,10 @@ class ConvergentBackTranslationImprover:
         self.critique_agent = critique_agent  # Llama3-based agent for refinement
         self.similarity_calculator = similarity_calculator
 
-    def improve_translation(self, source_text: str, src_lang_name: str, tgt_lang_name: str, convergence_threshold: float = 0.90,
-                            max_iterations: int = 5, min_improvement_delta: float = 0.01, debug: bool = True) -> dict:
+    def improve_translation(self, source_text: str, src_lang_name: str, tgt_lang_name: str,
+                        convergence_threshold: float = 0.90, max_iterations: int = 5,
+                        min_improvement_delta: float = 0.01, debug: bool = True) -> dict:
+
         results = {
             "iterations": [],
             "original_text": source_text,
@@ -449,133 +451,159 @@ class ConvergentBackTranslationImprover:
             "similarity_scores": [],
             "translation_history": [],
             "back_translations": [],
-            "total_nmt_duration": 0, # Renamed for generality
-            "total_nmt_tokens": 0,    # Renamed for generality
+            "total_nmt_duration": 0,
+            "total_nmt_tokens": 0,
             "total_critique_duration": 0,
             "total_critique_tokens": 0,
         }
-        
+    
         if debug:
             print("===== ORIGINAL SOURCE TEXT =====")
             print(source_text)
             print("==================================\n")
-
-        # Initial NMT (e.g., NLLB or mBART) translation
-        primary_translation = self.translator.translate(source_text, src_lang_name, tgt_lang_name)
+    
+        # Initial forward translation
+        try:
+            primary_translation = self.translator.translate(source_text, src_lang_name, tgt_lang_name)
+        except Exception as e:
+            print(f"Error in initial forward translation: {e}")
+            primary_translation = "Translation Error (Initial)"
+    
         results["initial_translation"] = primary_translation
         results["translation_history"].append(primary_translation)
-        
+    
         if debug:
             print(f"===== PRIMARY TRANSLATION ({self.translator.name}) =====")
             print(primary_translation)
             print("=================================\n")
-
-        initial_similarity = self.similarity_calculator.calculate_similarity(source_text, back_translation)
-        results["similarity_scores"].append(initial_similarity)
-        # # Initial NMT back-translation
-        # back_translation = self.translator.translate(primary_translation, tgt_lang_name, src_lang_name)
-        # results["back_translations"].append(back_translation)
-        
+    
+        # Initial back-translation with error handling
+        try:
+            back_translation = self.translator.translate(primary_translation, tgt_lang_name, src_lang_name)
+        except Exception as e:
+            print(f"Error in initial back-translation: {e}")
+            back_translation = ""  # Safe fallback
+    
+        results["back_translations"].append(back_translation)
+    
         if debug:
             print(f"===== INITIAL BACK TRANSLATION ({self.translator.name}) =====")
             print(back_translation if back_translation else "[Empty back translation]")
             print("=====================================\n")
-        
-        initial_similarity = self.similarity_calculator.calculate_similarity(source_text, back_translation)
+    
+        # Calculate initial similarity safely
+        initial_similarity = self.similarity_calculator.calculate_similarity(source_text, back_translation or "")
         results["similarity_scores"].append(initial_similarity)
+    
         if debug:
             print(f"Initial similarity: {initial_similarity:.4f}")
-
-        current_translation = primary_translation
-        current_similarity = initial_similarity
-        
-        # Accumulate initial translation/back-translation costs
+    
+        # Accumulate initial costs
         results["total_nmt_duration"] += self.translator.total_duration
         results["total_nmt_tokens"] += self.translator.total_tokens
-        self.translator.total_duration = 0 # Reset for next call
-        self.translator.total_tokens = 0 # Reset for next call
-
+        self.translator.total_duration = 0
+        self.translator.total_tokens = 0
+    
+        current_translation = primary_translation
+        current_similarity = initial_similarity
+        current_back_translation = back_translation  # Now always defined
+    
+        # Iteration loop (use current_back_translation)
         for iteration in range(1, max_iterations + 1):
             iteration_data = {
                 "iteration": iteration,
                 "translation": current_translation,
-                "back_translation": back_translation,
+                "back_translation": current_back_translation,
                 "similarity": current_similarity,
                 "discrepancies": []
             }
-            print(f"\n----- ITERATION {iteration} -----")
-            
-            discrepancies = self.similarity_calculator.extract_discrepancies(source_text, back_translation)
-            iteration_data["discrepancies"] = discrepancies
+    
             if debug:
+                print(f"\n----- ITERATION {iteration} -----")
+    
+            discrepancies = self.similarity_calculator.extract_discrepancies(
+                source_text, current_back_translation or ""
+            )
+            iteration_data["discrepancies"] = discrepancies
+    
+            if debug and discrepancies:
                 print(f"Found {len(discrepancies)} discrepancies:")
                 for i, disc in enumerate(discrepancies):
                     print(f"Discrepancy {i+1}:")
                     print(f"Original: {disc['original']}")
                     print(f"Back Translation: {disc['back_translation']}")
                     print(f"Similarity: {disc['similarity']:.4f}\n")
-            
-            if current_similarity >= convergence_threshold and not discrepancies: # Also check if no discrepancies
-                print(f"Convergence achieved with similarity {current_similarity:.4f} >= {convergence_threshold} and no discrepancies.")
+    
+            if current_similarity >= convergence_threshold and not discrepancies:
+                if debug:
+                    print(f"Convergence achieved with similarity {current_similarity:.4f} >= {convergence_threshold}")
                 results["convergence_achieved"] = True
                 break
-            
+    
             previous_similarity = current_similarity
-            
-            # Refine using critique agent
+    
+            # Refine with critique agent
             refined_translation = self.critique_agent.refine_with_discrepancies(
-                current_translation, source_text, back_translation, discrepancies, src_lang_name, tgt_lang_name
+                current_translation, source_text, current_back_translation or "",
+                discrepancies, src_lang_name, tgt_lang_name
             )
+    
             if debug:
                 print("\nRefined Translation (LLM-BTI):")
                 print(refined_translation)
-            
-            results["total_critique_duration"] += self.critique_agent.total_critique_duration
-            results["total_critique_tokens"] += self.critique_agent.total_critique_tokens
-            self.critique_agent.total_critique_duration = 0 # Reset
-            self.critique_agent.total_critique_tokens = 0 # Reset
-
+    
+            # Check for no change
             if refined_translation.strip() == current_translation.strip():
-                print("No meaningful change detected by LLM. Ending iterations.\n")
+                if debug:
+                    print("No meaningful change detected by LLM. Ending iterations.\n")
                 break
-            
+    
             current_translation = refined_translation
             results["translation_history"].append(current_translation)
-            
-            # Back-translate refined translation using NMT
-            back_translation = self.translator.translate(current_translation, tgt_lang_name, src_lang_name)
-            results["back_translations"].append(back_translation)
-            
+    
+            # New back-translation
+            try:
+                current_back_translation = self.translator.translate(current_translation, tgt_lang_name, src_lang_name)
+            except Exception as e:
+                print(f"Error in back-translation during iteration {iteration}: {e}")
+                current_back_translation = ""
+    
+            results["back_translations"].append(current_back_translation)
+    
             results["total_nmt_duration"] += self.translator.total_duration
             results["total_nmt_tokens"] += self.translator.total_tokens
-            self.translator.total_duration = 0 # Reset
-            self.translator.total_tokens = 0 # Reset
-
+            self.translator.total_duration = 0
+            self.translator.total_tokens = 0
+    
             if debug:
                 print(f"\nUpdated Back Translation ({self.translator.name}):")
-                print(back_translation if back_translation else "[Empty back translation]")
-            
-            current_similarity = self.similarity_calculator.calculate_similarity(source_text, back_translation)
+                print(current_back_translation if current_back_translation else "[Empty back translation]")
+    
+            current_similarity = self.similarity_calculator.calculate_similarity(source_text, current_back_translation or "")
             results["similarity_scores"].append(current_similarity)
-            print(f"\nNew similarity: {current_similarity:.4f}")
-            iteration_data["similarity"] = current_similarity
-            
-            # Check for diminishing returns (improvement delta)
+    
+            if debug:
+                print(f"\nNew similarity: {current_similarity:.4f}")
+    
             improvement_delta = current_similarity - previous_similarity
-            if improvement_delta < min_improvement_delta and improvement_delta >= 0: # Only if it's not a regression
-                print(f"Improvement delta {improvement_delta:.4f} is below threshold {min_improvement_delta}. Stopping iterations.\n")
+            if improvement_delta < min_improvement_delta and improvement_delta >= 0:
+                if debug:
+                    print(f"Improvement delta {improvement_delta:.4f} below threshold. Stopping.\n")
                 break
-            elif improvement_delta < 0 and iteration > 1: # If similarity decreases significantly after initial improvements
-                print(f"Similarity decreased in this iteration ({improvement_delta:.4f}). Stopping to prevent degradation.\n")
-                # Decide if you want to revert to the previous best translation here.
-                # For now, we just stop.
-                break 
-
+            elif improvement_delta < 0:
+                if debug:
+                    print(f"Similarity decreased ({improvement_delta:.4f}). Stopping to avoid degradation.\n")
+                break
+    
+            results["total_critique_duration"] += self.critique_agent.total_critique_duration
+            results["total_critique_tokens"] += self.critique_agent.total_critique_tokens
+            self.critique_agent.total_critique_duration = 0
+            self.critique_agent.total_critique_tokens = 0
+    
             results["iterations"].append(iteration_data)
-
+    
         results["final_translation"] = current_translation
         return results
-
 # -----------------------------
 # FloresTranslationEvaluator Class
 # -----------------------------
