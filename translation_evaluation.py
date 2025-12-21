@@ -1038,21 +1038,21 @@ if __name__ == "__main__":
     # List of language pairs to evaluate
     LANGUAGE_PAIRS = [
         ("eng_Latn", "npi_Deva"),    
-        ("eng_Latn", "mya_Mymr"), 
-        ("eng_Latn", "tha_Thai"),
-        ("eng_Latn", "swh_Latn"),
-        ("eng_Latn", "hin_Deva"),
-        ("eng_Latn", "amh_Ethi"),
-        ("eng_Latn", "vie_Latn"),
-        ("eng_Latn", "tgk_Cyrl"),
-        ("eng_Latn", "tgl_Latn"),
-         ("eng_Latn", "guj_Gujr"),
-         ("eng_Latn", "lao_Laoo"),
-         ("eng_Latn", "ory_Oriya"),
-         ("eng_Latn", "asm_Beng"),
+        # ("eng_Latn", "mya_Mymr"), 
+        # ("eng_Latn", "tha_Thai"),
+        # ("eng_Latn", "swh_Latn"),
+        # ("eng_Latn", "hin_Deva"),
+        # ("eng_Latn", "amh_Ethi"),
+        # ("eng_Latn", "vie_Latn"),
+        # ("eng_Latn", "tgk_Cyrl"),
+        # ("eng_Latn", "tgl_Latn"),
+        #  ("eng_Latn", "guj_Gujr"),
+        #  ("eng_Latn", "lao_Laoo"),
+        #  ("eng_Latn", "ory_Oriya"),
+        #  ("eng_Latn", "asm_Beng"),
     ]
 
-    NUM_EXAMPLES_TO_EVALUATE = 2000
+    NUM_EXAMPLES_TO_EVALUATE = 500
     MAX_ITERATIONS_FOR_LLMBTI = 5
 
     # Initialize models
