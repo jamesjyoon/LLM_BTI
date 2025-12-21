@@ -859,76 +859,144 @@ class FloresTranslationEvaluator:
 # Main Execution: Evaluate on Dataset Examples
 # -----------------------------
 if __name__ == "__main__":
-    # List of language pairs to evaluate (add as many as you want!)
+    # List of language pairs to evaluate
     LANGUAGE_PAIRS = [
         ("eng_Latn", "kor_Hang"),    # English → Korean
-        # ("eng_Latn", "jpn_Jpan"),    # English → Japanese
-        # ("eng_Latn", "fra_Latn"),    # English → French
-        # ("eng_Latn", "spa_Latn"),    # English → Spanish
-        # ("eng_Latn", "hin_Deva"),    # English → Hindi (low-resource example)
-        # # Add more: e.g., ("eng_Latn", "zho_Hans") for Chinese Simplified
+        # ("eng_Latn", "jpn_Jpan"),  # Uncomment to add more
+        # ("eng_Latn", "fra_Latn"),
+        # ("eng_Latn", "hin_Deva"),
     ]
 
-    NUM_EXAMPLES_TO_EVALUATE = 5
+    NUM_EXAMPLES_TO_EVALUATE = 50
     MAX_ITERATIONS_FOR_LLMBTI = 3
-    SIMILARITY_CALCULATOR_TYPE = "SentenceTransformer"
 
-    # --- Initialize Models (unchanged) ---
+    # Initialize models
     nllb_translator = NLLBTranslator(get_code_func=get_nllb_code, max_length=512)
     mbart_translator = MBARTTranslator(get_code_func=get_mbart_code, max_length=512)
     critique_agent = EnhancedCritiqueAgent(model="llama-3.3-70b-versatile", max_tokens=512)
     llm_only_translator = LLMOnlyTranslator(model="llama-3.3-70b-versatile", max_tokens=512)
 
-    if SIMILARITY_CALCULATOR_TYPE == "LCS":
-        similarity_calculator = LCSBasedSimilarityCalculator()
-        print("Using LCS-based similarity for discrepancy detection.")
-    elif SIMILARITY_CALCULATOR_TYPE == "SentenceTransformer":
-        similarity_calculator = SentenceTransformerSimilarityCalculator()
-        print("Using Sentence-Transformer based similarity for discrepancy detection.")
-    else:
-        raise ValueError("Invalid SIMILARITY_CALCULATOR_TYPE.")
+    similarity_calculator = SentenceTransformerSimilarityCalculator()
+    print("Using Sentence-Transformer based similarity for discrepancy detection.")
 
-    # --- Create Evaluator Instance (unchanged) ---
+    # Create evaluator
     flores_evaluator = FloresTranslationEvaluator(split='devtest')
 
-    # --- Loop Over Each Language Pair ---
+    # Main loop over language pairs
     for src_code, tgt_code in LANGUAGE_PAIRS:
-        try:
-            print(f"\n\n===== Starting Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====")
-            # ... calculate indices_to_use ...
+        print(f"\n\n===== Starting Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====")
+        print("--- Base NMT for LLM-BTI: NLLB and mBART ---\n")
 
+        try:
+            # Calculate available examples for this pair
+            src_lang_code, src_script = src_code.split("_")
+            tgt_lang_code, tgt_script = tgt_code.split("_")
+
+            available_count = len(flores_evaluator.df[
+                (flores_evaluator.df['iso_639_3'] == src_lang_code) &
+                (flores_evaluator.df['iso_15924'] == src_script)
+            ])
+
+            indices_to_use = list(range(min(available_count, NUM_EXAMPLES_TO_EVALUATE)))
+            print(f"Evaluating on {len(indices_to_use)} examples")
+
+            # Run evaluation (all required args included!)
             flores_evaluator.run_pipeline_on_examples(
-                src_code, tgt_code,
-                indices_to_use,
-                nllb_translator, mbart_translator,
-                critique_agent,
-                llm_only_translator,
-                similarity_calculator,
+                src_code=src_code,
+                tgt_code=tgt_code,
+                indices=indices_to_use,
+                nllb_translator=nllb_translator,
+                mbart_translator=mbart_translator,
+                critique_agent=critique_agent,
+                llm_only_translator=llm_only_translator,
+                similarity_calculator_instance=similarity_calculator,
                 max_iterations=MAX_ITERATIONS_FOR_LLMBTI,
-                debug=False
+                debug=False  # Set to True only for testing/debugging
             )
+
             print(f"===== Completed Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====\n")
 
         except Exception as e:
-            print(f"!!! Error during evaluation of {src_code} → {tgt_code}: {e}")
+            print(f"!!! Error during {src_code} → {tgt_code}: {e}")
             import traceback
-            traceback.print_exc()  # Prints full error details
-            print("Continuing to next language pair...\n")
+            traceback.print_exc()
+            print("Skipping to next pair...\n")
+
         finally:
-            # Optional cleanup (e.g., clear matplotlib figures or reset models)
-            plt.close('all')  # Clears any lingering figures
+            plt.close('all')  # Clean up any open figures
 
-    print("All language pairs processed (some may have failed).")
+    print("All language pairs processed!")
+# if __name__ == "__main__":
+#     # List of language pairs to evaluate (add as many as you want!)
+#     LANGUAGE_PAIRS = [
+#         ("eng_Latn", "kor_Hang"),    # English → Korean
+#         # ("eng_Latn", "jpn_Jpan"),    # English → Japanese
+#         # ("eng_Latn", "fra_Latn"),    # English → French
+#         # ("eng_Latn", "spa_Latn"),    # English → Spanish
+#         # ("eng_Latn", "hin_Deva"),    # English → Hindi (low-resource example)
+#         # # Add more: e.g., ("eng_Latn", "zho_Hans") for Chinese Simplified
+#     ]
 
-    # --- Create Evaluator Instance ---
-    flores_evaluator = FloresTranslationEvaluator(split='devtest')  # 'devtest' has ~2000 sentences, better for evaluation
+#     NUM_EXAMPLES_TO_EVALUATE = 5
+#     MAX_ITERATIONS_FOR_LLMBTI = 3
+#     SIMILARITY_CALCULATOR_TYPE = "SentenceTransformer"
+
+#     # --- Initialize Models (unchanged) ---
+#     nllb_translator = NLLBTranslator(get_code_func=get_nllb_code, max_length=512)
+#     mbart_translator = MBARTTranslator(get_code_func=get_mbart_code, max_length=512)
+#     critique_agent = EnhancedCritiqueAgent(model="llama-3.3-70b-versatile", max_tokens=512)
+#     llm_only_translator = LLMOnlyTranslator(model="llama-3.3-70b-versatile", max_tokens=512)
+
+#     if SIMILARITY_CALCULATOR_TYPE == "LCS":
+#         similarity_calculator = LCSBasedSimilarityCalculator()
+#         print("Using LCS-based similarity for discrepancy detection.")
+#     elif SIMILARITY_CALCULATOR_TYPE == "SentenceTransformer":
+#         similarity_calculator = SentenceTransformerSimilarityCalculator()
+#         print("Using Sentence-Transformer based similarity for discrepancy detection.")
+#     else:
+#         raise ValueError("Invalid SIMILARITY_CALCULATOR_TYPE.")
+
+#     # --- Create Evaluator Instance (unchanged) ---
+#     flores_evaluator = FloresTranslationEvaluator(split='devtest')
+
+#     # --- Loop Over Each Language Pair ---
+#     for src_code, tgt_code in LANGUAGE_PAIRS:
+#         try:
+#             print(f"\n\n===== Starting Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====")
+#             # ... calculate indices_to_use ...
+
+#             flores_evaluator.run_pipeline_on_examples(
+#                 src_code, tgt_code,
+#                 indices_to_use,
+#                 nllb_translator, mbart_translator,
+#                 critique_agent,
+#                 llm_only_translator,
+#                 similarity_calculator,
+#                 max_iterations=MAX_ITERATIONS_FOR_LLMBTI,
+#                 debug=False
+#             )
+#             print(f"===== Completed Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====\n")
+
+#         except Exception as e:
+#             print(f"!!! Error during evaluation of {src_code} → {tgt_code}: {e}")
+#             import traceback
+#             traceback.print_exc()  # Prints full error details
+#             print("Continuing to next language pair...\n")
+#         finally:
+#             # Optional cleanup (e.g., clear matplotlib figures or reset models)
+#             plt.close('all')  # Clears any lingering figures
+
+#     print("All language pairs processed (some may have failed).")
+
+#     # --- Create Evaluator Instance ---
+#     flores_evaluator = FloresTranslationEvaluator(split='devtest')  # 'devtest' has ~2000 sentences, better for evaluation
     
-    actual_num_examples = len(flores_evaluator.dataset)
-    indices_to_use = list(range(min(actual_num_examples, NUM_EXAMPLES_TO_EVALUATE)))
-    print(f"--- Base NMT for LLM-BTI: NLLB and mBART ---")
+#     actual_num_examples = len(flores_evaluator.dataset)
+#     indices_to_use = list(range(min(actual_num_examples, NUM_EXAMPLES_TO_EVALUATE)))
+#     print(f"--- Base NMT for LLM-BTI: NLLB and mBART ---")
 
-    flores_evaluator.run_pipeline_on_examples(
-        indices_to_use, nllb_translator, mbart_translator, critique_agent, llm_only_translator, 
-        similarity_calculator, # Pass the instance here
-        max_iterations=MAX_ITERATIONS_FOR_LLMBTI, debug=False # Set debug=True for detailed output per example
-    )
+#     flores_evaluator.run_pipeline_on_examples(
+#         indices_to_use, nllb_translator, mbart_translator, critique_agent, llm_only_translator, 
+#         similarity_calculator, # Pass the instance here
+#         max_iterations=MAX_ITERATIONS_FOR_LLMBTI, debug=False # Set debug=True for detailed output per example
+#     )
