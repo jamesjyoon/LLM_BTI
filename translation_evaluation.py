@@ -1030,9 +1030,6 @@ class FloresTranslationEvaluator:
         filename = f"translation_scores_{src_code}_to_{tgt_code}.png"
         plt.savefig(filename, dpi=300, bbox_inches='tight')
         print(f"Plot saved as '{filename}' in the current working directory.")
-    
-        # Optional: close to free memory (good when running many pairs)
-        plt.close(fig)
 
 # -----------------------------
 # Main Execution: Evaluate on Dataset Examples
@@ -1040,14 +1037,23 @@ class FloresTranslationEvaluator:
 if __name__ == "__main__":
     # List of language pairs to evaluate
     LANGUAGE_PAIRS = [
-        ("eng_Latn", "kor_Hang"),    # English → Korean
-        ("eng_Latn", "jpn_Jpan"),  # Uncomment to add more
-        # ("eng_Latn", "fra_Latn"),
-        # ("eng_Latn", "hin_Deva"),
+        ("eng_Latn", "npi_Deva"),    
+        ("eng_Latn", "mya_Mymr"), 
+        ("eng_Latn", "tha_Thai"),
+        ("eng_Latn", "swh_Latn"),
+        ("eng_Latn", "hin_Deva"),
+        ("eng_Latn", "amh_Ethi"),
+        ("eng_Latn", "vie_Latn"),
+        ("eng_Latn", "tgk_Cyrl"),
+        ("eng_Latn", "tgl_Latn"),
+         ("eng_Latn", "guj_Gujr"),
+         ("eng_Latn", "lao_Laoo"),
+         ("eng_Latn", "ory_Oriya"),
+         ("eng_Latn", "asm_Beng"),
     ]
 
-    NUM_EXAMPLES_TO_EVALUATE = 5
-    MAX_ITERATIONS_FOR_LLMBTI = 3
+    NUM_EXAMPLES_TO_EVALUATE = 2000
+    MAX_ITERATIONS_FOR_LLMBTI = 5
 
     # Initialize models
     nllb_translator = NLLBTranslator(get_code_func=get_nllb_code, max_length=512)
