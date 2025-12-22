@@ -82,12 +82,12 @@ async def async_generate(prompt: str, model: str, temperature: float, max_tokens
         return "Translation Error (OpenRouter)", 0, 0, 0
 
 # -----------------------------
-# Language Code Mappers (NLLB and mBART)
+# Language Code Mappers (madlad and mBART)
 # -----------------------------
-def get_nllb_code(language: str) -> str:
+def get_madlad_code(language: str) -> str:
     """
-    Map common language names to their NLLB language codes.
-    NLLB (No Language Left Behind)
+    Map common language names to their madlad language codes.
+    madlad (No Language Left Behind)
     """
     mapping = {
         "japanese": "jpn_Jpan", "irish": "gle_Latn", "nepali": "npi_Deva",
@@ -122,9 +122,9 @@ def get_nllb_code(language: str) -> str:
     if language.lower() in [v.lower() for v in mapping.values()]: return language
     return mapping.get(language.lower(), language)
 
-def get_nllb_lang_name(nllb_code: str) -> str:
+def get_madlad_lang_name(madlad_code: str) -> str:
     """
-    Map NLLB language codes back to common language names for display.
+    Map madlad language codes back to common language names for display.
     """
     reverse_mapping = {
         "jpn_Jpan": "Japanese", "gle_Latn": "Irish", "npi_Deva": "Nepali",
@@ -155,7 +155,7 @@ def get_nllb_lang_name(nllb_code: str) -> str:
         "slv_Latn": "Slovenian", "tur_Latn": "Turkish", "ukr_Cyrl": "Ukrainian",
         "cym_Latn": "Welsh",
     }
-    return reverse_mapping.get(nllb_code, nllb_code)
+    return reverse_mapping.get(madlad_code, madlad_code)
 
 def get_mbart_code(language: str) -> str:
     """
@@ -206,17 +206,17 @@ class BaseTranslator:
     def translate(self, source_text: str, src_lang: str, tgt_lang: str, num_candidates: int = 1):
         raise NotImplementedError("Subclasses must implement 'translate' method.")
 
-class NLLBTranslator(BaseTranslator):
-    def __init__(self, model_name="Unbabel/TowerInstruct-7B-v0.2", name="NLLBTranslator", max_length=512, get_code_func=None):
+class madladTranslator(BaseTranslator):
+    def __init__(self, model_name="google/madlad400-10b", name="madladTranslator", max_length=512, get_code_func=None):
         super().__init__(name, max_length)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, token=HUGGING_FACE_HUB_TOKEN)       
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name, token=HUGGING_FACE_HUB_TOKEN)
-        self.get_code_func = get_code_func if get_code_func is not None else get_nllb_code
+        self.get_code_func = get_code_func if get_code_func is not None else get_madlad_code
 
     def get_forced_bos_token_id(self, tgt_code: str) -> int:
         token_id = self.tokenizer.convert_tokens_to_ids(tgt_code)
         if token_id is None or token_id == self.tokenizer.unk_token_id:
-            raise ValueError(f"Language token {tgt_code} not found in NLLB vocabulary.")
+            raise ValueError(f"Language token {tgt_code} not found in madlad vocabulary.")
         return token_id
 
     def translate(self, source_text: str, src_lang: str, tgt_lang: str, num_candidates: int = 1):
@@ -245,8 +245,8 @@ class NLLBTranslator(BaseTranslator):
 
             return translations[0] if num_candidates == 1 else translations
         except Exception as e:
-            print(f"Error during NLLB translation: {e}")
-            return "Translation Error (NLLB)"
+            print(f"Error during madlad translation: {e}")
+            return "Translation Error (madlad)"
 
 class MBARTTranslator(BaseTranslator):
     def __init__(self, model_name="facebook/mbart-large-50-many-to-many-mmt", name="MBARTTranslator", max_length=512, get_code_func=None):
@@ -447,7 +447,7 @@ class EnhancedCritiqueAgent:
 # -----------------------------
 class ConvergentBackTranslationImprover:
     def __init__(self, translator: BaseTranslator, critique_agent: EnhancedCritiqueAgent, similarity_calculator: SimilarityCalculator):
-        self.translator = translator  # Instance of NLLBTranslator or MBARTTranslator
+        self.translator = translator  # Instance of madladTranslator or MBARTTranslator
         self.critique_agent = critique_agent  # Llama3-based agent for refinement
         self.similarity_calculator = similarity_calculator
 
@@ -639,7 +639,7 @@ class FloresTranslationEvaluator:
         self.bleu_metric = evaluate.load("bleu")
         self.bertscore_metric = evaluate.load("bertscore")
     def run_pipeline_on_example(self, index: int, 
-                                nllb_translator: NLLBTranslator, 
+                                madlad_translator: madladTranslator, 
                                 mbart_translator: MBARTTranslator, 
                                 critique_agent: EnhancedCritiqueAgent,
                                 llm_only_translator: LLMOnlyTranslator, 
@@ -669,8 +669,8 @@ class FloresTranslationEvaluator:
         reference_translation = tgt_rows.loc[index, 'text']
         sentence_id = src_rows.loc[index, 'id']
 
-        src_lang_name = get_nllb_lang_name(f"{src_lang_code}_{src_script}")
-        tgt_lang_name = get_nllb_lang_name(f"{tgt_lang_code}_{tgt_script}")
+        src_lang_name = get_madlad_lang_name(f"{src_lang_code}_{src_script}")
+        tgt_lang_name = get_madlad_lang_name(f"{tgt_lang_code}_{tgt_script}")
 
         if debug:
             print(f"\nSource text ({src_lang_name}) from dataset (id={sentence_id}):")
@@ -679,8 +679,8 @@ class FloresTranslationEvaluator:
             print(reference_translation)
 
         # Reset cumulative costs before each example
-        nllb_translator.total_duration = 0
-        nllb_translator.total_tokens = 0
+        madlad_translator.total_duration = 0
+        madlad_translator.total_tokens = 0
         mbart_translator.total_duration = 0
         mbart_translator.total_tokens = 0
         critique_agent.total_critique_duration = 0
@@ -688,17 +688,17 @@ class FloresTranslationEvaluator:
         llm_only_translator.total_duration = 0
         llm_only_translator.total_tokens = 0
 
-        # 1. LLM-BTI with NLLB
-        #print("\n--- Running LLM-BTI (NLLB as base) ---")
-        llm_bti_nllb_improver = ConvergentBackTranslationImprover(
-            nllb_translator, critique_agent, similarity_calculator_instance
+        # 1. LLM-BTI with madlad
+        #print("\n--- Running LLM-BTI (madlad as base) ---")
+        llm_bti_madlad_improver = ConvergentBackTranslationImprover(
+            madlad_translator, critique_agent, similarity_calculator_instance
         )
-        llm_bti_nllb_results = llm_bti_nllb_improver.improve_translation(
+        llm_bti_madlad_results = llm_bti_madlad_improver.improve_translation(
             source_text, src_lang_name, tgt_lang_name,
             convergence_threshold=0.90, max_iterations=max_iterations,
             min_improvement_delta=0.005, debug=debug
         )
-        final_translation_llm_bti_nllb = llm_bti_nllb_results["final_translation"]
+        final_translation_llm_bti_madlad = llm_bti_madlad_results["final_translation"]
 
         # 2. LLM-BTI with mBART
         #print("\n--- Running LLM-BTI (mBART as base) ---")
@@ -712,8 +712,8 @@ class FloresTranslationEvaluator:
         )
         final_translation_llm_bti_mbart = llm_bti_mbart_results["final_translation"]
 
-        # 3. NLLB Primary
-        primary_translation_nllb = nllb_translator.translate(source_text, src_lang_name, tgt_lang_name)
+        # 3. madlad Primary
+        primary_translation_madlad = madlad_translator.translate(source_text, src_lang_name, tgt_lang_name)
 
         # 4. mBART Primary
         primary_translation_mbart = mbart_translator.translate(source_text, src_lang_name, tgt_lang_name)
@@ -722,18 +722,18 @@ class FloresTranslationEvaluator:
         llm_only_translation = llm_only_translator.translate(source_text, src_lang_name, tgt_lang_name)
 
         if debug:
-            print(f"\nNLLB Primary: {primary_translation_nllb}")
+            print(f"\nmadlad Primary: {primary_translation_madlad}")
             print(f"mBART Primary: {primary_translation_mbart}")
             print(f"LLM Only: {llm_only_translation}")
-            print(f"LLM-BTI (NLLB): {final_translation_llm_bti_nllb}")
+            print(f"LLM-BTI (madlad): {final_translation_llm_bti_madlad}")
             print(f"LLM-BTI (mBART): {final_translation_llm_bti_mbart}")
 
         # Evaluation
-        primary_nllb_comet = self.comet_metric.compute(
-            sources=[source_text], predictions=[primary_translation_nllb], references=[reference_translation]
+        primary_madlad_comet = self.comet_metric.compute(
+            sources=[source_text], predictions=[primary_translation_madlad], references=[reference_translation]
         )["scores"][0]
-        primary_nllb_chrf = self.chrf_metric.compute(
-            predictions=[primary_translation_nllb], references=[reference_translation]
+        primary_madlad_chrf = self.chrf_metric.compute(
+            predictions=[primary_translation_madlad], references=[reference_translation]
         )["score"]
 
         primary_mbart_comet = self.comet_metric.compute(
@@ -750,11 +750,11 @@ class FloresTranslationEvaluator:
             predictions=[llm_only_translation], references=[reference_translation]
         )["score"]
 
-        final_llm_bti_nllb_comet = self.comet_metric.compute(
-            sources=[source_text], predictions=[final_translation_llm_bti_nllb], references=[reference_translation]
+        final_llm_bti_madlad_comet = self.comet_metric.compute(
+            sources=[source_text], predictions=[final_translation_llm_bti_madlad], references=[reference_translation]
         )["scores"][0]
-        final_llm_bti_nllb_chrf = self.chrf_metric.compute(
-            predictions=[final_translation_llm_bti_nllb], references=[reference_translation]
+        final_llm_bti_madlad_chrf = self.chrf_metric.compute(
+            predictions=[final_translation_llm_bti_madlad], references=[reference_translation]
         )["score"]
 
         final_llm_bti_mbart_comet = self.comet_metric.compute(
@@ -766,46 +766,46 @@ class FloresTranslationEvaluator:
 
         # BLEU (standard SacreBLEU-style, but using the basic 'bleu' for simplicity)
         # References must be list of lists for multiple refs, but we have one → [[reference]]
-        primary_nllb_bleu = self.bleu_metric.compute(predictions=[primary_translation_nllb], references=[[reference_translation]])["bleu"] * 100  # Scale to 0-100
+        primary_madlad_bleu = self.bleu_metric.compute(predictions=[primary_translation_madlad], references=[[reference_translation]])["bleu"] * 100  # Scale to 0-100
         primary_mbart_bleu = self.bleu_metric.compute(predictions=[primary_translation_mbart], references=[[reference_translation]])["bleu"] * 100
         llm_only_bleu = self.bleu_metric.compute(predictions=[llm_only_translation], references=[[reference_translation]])["bleu"] * 100
-        final_llm_bti_nllb_bleu = self.bleu_metric.compute(predictions=[final_translation_llm_bti_nllb], references=[[reference_translation]])["bleu"] * 100
+        final_llm_bti_madlad_bleu = self.bleu_metric.compute(predictions=[final_translation_llm_bti_madlad], references=[[reference_translation]])["bleu"] * 100
         final_llm_bti_mbart_bleu = self.bleu_metric.compute(predictions=[final_translation_llm_bti_mbart], references=[[reference_translation]])["bleu"] * 100
 
         # BERTScore (use F1; lang code for better model selection – adjust per target language)
         tgt_lang_code = tgt_code.split("_")[0]  # e.g., "kor" or "jpn"
         bertscore_results = self.bertscore_metric.compute(
-            predictions=[primary_translation_nllb, primary_translation_mbart, llm_only_translation, final_translation_llm_bti_nllb, final_translation_llm_bti_mbart],
+            predictions=[primary_translation_madlad, primary_translation_mbart, llm_only_translation, final_translation_llm_bti_madlad, final_translation_llm_bti_mbart],
             references=[reference_translation] * 5,
             lang=tgt_lang_code  # Auto-selects best multilingual model (supports Korean, Japanese, etc.)
         )
-        primary_nllb_bertscore = bertscore_results["f1"][0] * 100
+        primary_madlad_bertscore = bertscore_results["f1"][0] * 100
         primary_mbart_bertscore = bertscore_results["f1"][1] * 100
         llm_only_bertscore = bertscore_results["f1"][2] * 100
-        final_llm_bti_nllb_bertscore = bertscore_results["f1"][3] * 100
+        final_llm_bti_madlad_bertscore = bertscore_results["f1"][3] * 100
         final_llm_bti_mbart_bertscore = bertscore_results["f1"][4] * 100
                                     
         return {
-            "primary_nllb_comet": primary_nllb_comet, "primary_nllb_chrf": primary_nllb_chrf,
+            "primary_madlad_comet": primary_madlad_comet, "primary_madlad_chrf": primary_madlad_chrf,
             "primary_mbart_comet": primary_mbart_comet, "primary_mbart_chrf": primary_mbart_chrf,
             "llm_only_comet": llm_only_comet, "llm_only_chrf": llm_only_chrf,
-            "final_llm_bti_nllb_comet": final_llm_bti_nllb_comet, "final_llm_bti_nllb_chrf": final_llm_bti_nllb_chrf,
+            "final_llm_bti_madlad_comet": final_llm_bti_madlad_comet, "final_llm_bti_madlad_chrf": final_llm_bti_madlad_chrf,
             "final_llm_bti_mbart_comet": final_llm_bti_mbart_comet, "final_llm_bti_mbart_chrf": final_llm_bti_mbart_chrf,
 
-            "primary_nllb_bleu": primary_nllb_bleu,
+            "primary_madlad_bleu": primary_madlad_bleu,
             "primary_mbart_bleu": primary_mbart_bleu,
             "llm_only_bleu": llm_only_bleu,
-            "final_llm_bti_nllb_bleu": final_llm_bti_nllb_bleu,
+            "final_llm_bti_madlad_bleu": final_llm_bti_madlad_bleu,
             "final_llm_bti_mbart_bleu": final_llm_bti_mbart_bleu,
 
-            "primary_nllb_bertscore": primary_nllb_bertscore,
+            "primary_madlad_bertscore": primary_madlad_bertscore,
             "primary_mbart_bertscore": primary_mbart_bertscore,
             "llm_only_bertscore": llm_only_bertscore,
-            "final_llm_bti_nllb_bertscore": final_llm_bti_nllb_bertscore,
+            "final_llm_bti_madlad_bertscore": final_llm_bti_madlad_bertscore,
             "final_llm_bti_mbart_bertscore": final_llm_bti_mbart_bertscore,
 
-            "llm_bti_nllb_duration": llm_bti_nllb_results["total_nmt_duration"] + llm_bti_nllb_results["total_critique_duration"],
-            "llm_bti_nllb_tokens": llm_bti_nllb_results["total_nmt_tokens"] + llm_bti_nllb_results["total_critique_tokens"],
+            "llm_bti_madlad_duration": llm_bti_madlad_results["total_nmt_duration"] + llm_bti_madlad_results["total_critique_duration"],
+            "llm_bti_madlad_tokens": llm_bti_madlad_results["total_nmt_tokens"] + llm_bti_madlad_results["total_critique_tokens"],
             "llm_bti_mbart_duration": llm_bti_mbart_results["total_nmt_duration"] + llm_bti_mbart_results["total_critique_duration"],
             "llm_bti_mbart_tokens": llm_bti_mbart_results["total_nmt_tokens"] + llm_bti_mbart_results["total_critique_tokens"],
             "llm_only_duration": llm_only_translator.total_duration,
@@ -813,29 +813,29 @@ class FloresTranslationEvaluator:
         }
 
     def run_pipeline_on_examples(self, src_code: str, tgt_code: str, indices: list,
-                                 nllb_translator: NLLBTranslator, mbart_translator: MBARTTranslator,
+                                 madlad_translator: madladTranslator, mbart_translator: MBARTTranslator,
                                  critique_agent: EnhancedCritiqueAgent,
                                  llm_only_translator: LLMOnlyTranslator, 
                                  similarity_calculator_instance: SimilarityCalculator,
                                  max_iterations: int = 3, debug: bool = True):
 
-        # Extract iso_639_3 and script from NLLB-style codes (e.g., "eng_Latn" → "eng", "Latn")
+        # Extract iso_639_3 and script from madlad-style codes (e.g., "eng_Latn" → "eng", "Latn")
         src_lang_code, src_script = src_code.split("_")
         tgt_lang_code, tgt_script = tgt_code.split("_")
 
         scores = {
-            "primary_nllb_comet": [], "primary_nllb_chrf": [],
+            "primary_madlad_comet": [], "primary_madlad_chrf": [],
             "primary_mbart_comet": [], "primary_mbart_chrf": [],
             "llm_only_comet": [], "llm_only_chrf": [],
-            "final_llm_bti_nllb_comet": [], "final_llm_bti_nllb_chrf": [],
+            "final_llm_bti_madlad_comet": [], "final_llm_bti_madlad_chrf": [],
             "final_llm_bti_mbart_comet": [], "final_llm_bti_mbart_chrf": [],
-            "primary_nllb_bleu": [], "primary_mbart_bleu": [], "llm_only_bleu": [],
-            "final_llm_bti_nllb_bleu": [], "final_llm_bti_mbart_bleu": [],
-            "primary_nllb_bertscore": [], "primary_mbart_bertscore": [], "llm_only_bertscore": [],
-            "final_llm_bti_nllb_bertscore": [], "final_llm_bti_mbart_bertscore": [],
+            "primary_madlad_bleu": [], "primary_mbart_bleu": [], "llm_only_bleu": [],
+            "final_llm_bti_madlad_bleu": [], "final_llm_bti_mbart_bleu": [],
+            "primary_madlad_bertscore": [], "primary_mbart_bertscore": [], "llm_only_bertscore": [],
+            "final_llm_bti_madlad_bertscore": [], "final_llm_bti_mbart_bertscore": [],
         }
         computational_costs = {
-            "llm_bti_nllb_duration": [], "llm_bti_nllb_tokens": [],
+            "llm_bti_madlad_duration": [], "llm_bti_madlad_tokens": [],
             "llm_bti_mbart_duration": [], "llm_bti_mbart_tokens": [],
             "llm_only_duration": [], "llm_only_tokens": []
         }
@@ -844,7 +844,7 @@ class FloresTranslationEvaluator:
             #print(f"\n================== Running example {idx} ==================\n")
             try:
                 result = self.run_pipeline_on_example(
-                    idx, nllb_translator, mbart_translator, critique_agent,
+                    idx, madlad_translator, mbart_translator, critique_agent,
                     llm_only_translator, similarity_calculator_instance,
                     src_lang_code=src_lang_code, src_script=src_script,
                     tgt_lang_code=tgt_lang_code, tgt_script=tgt_script,
@@ -856,8 +856,8 @@ class FloresTranslationEvaluator:
                     scores[key].append(result[key])
 
                 # Append costs
-                computational_costs["llm_bti_nllb_duration"].append(result["llm_bti_nllb_duration"])
-                computational_costs["llm_bti_nllb_tokens"].append(result["llm_bti_nllb_tokens"])
+                computational_costs["llm_bti_madlad_duration"].append(result["llm_bti_madlad_duration"])
+                computational_costs["llm_bti_madlad_tokens"].append(result["llm_bti_madlad_tokens"])
                 computational_costs["llm_bti_mbart_duration"].append(result["llm_bti_mbart_duration"])
                 computational_costs["llm_bti_mbart_tokens"].append(result["llm_bti_mbart_tokens"])
                 computational_costs["llm_only_duration"].append(result["llm_only_duration"])
@@ -866,7 +866,7 @@ class FloresTranslationEvaluator:
             except Exception as e:
                 print(f"Error processing example {idx}: {e}")
 
-        n = len(scores["final_llm_bti_nllb_comet"])
+        n = len(scores["final_llm_bti_madlad_comet"])
         if n == 0:
             print("No scores to average.")
             return
@@ -879,8 +879,8 @@ class FloresTranslationEvaluator:
 
         # Print results (same as your original)
         print(f"\n================== Average Evaluation Scores over {n} examples ==================")
-        print(f"Avg NLLB Primary - COMET: {metrics_summary['primary_nllb_comet_avg']:.4f} (±{metrics_summary['primary_nllb_comet_std']:.4f}), chrF: {metrics_summary['primary_nllb_chrf_avg']:.4f}")
-        print(f"Avg NLLB Primary - BLEU: {metrics_summary['primary_nllb_bleu_avg']:.2f} (±{metrics_summary['primary_nllb_bleu_std']:.2f}), BERTScore F1: {metrics_summary['primary_nllb_bertscore_avg']:.2f}")
+        print(f"Avg madlad Primary - COMET: {metrics_summary['primary_madlad_comet_avg']:.4f} (±{metrics_summary['primary_madlad_comet_std']:.4f}), chrF: {metrics_summary['primary_madlad_chrf_avg']:.4f}")
+        print(f"Avg madlad Primary - BLEU: {metrics_summary['primary_madlad_bleu_avg']:.2f} (±{metrics_summary['primary_madlad_bleu_std']:.2f}), BERTScore F1: {metrics_summary['primary_madlad_bertscore_avg']:.2f}")
      
         print(f"Avg mBART Primary - COMET: {metrics_summary['primary_mbart_comet_avg']:.4f} (±{metrics_summary['primary_mbart_comet_std']:.4f}), chrF: {metrics_summary['primary_mbart_chrf_avg']:.4f}")
         print(f"Avg mBART Primary - BLEU: {metrics_summary['primary_mbart_bleu_avg']:.2f} (±{metrics_summary['primary_mbart_bleu_std']:.2f}), BERTScore F1: {metrics_summary['primary_mbart_bertscore_avg']:.2f}")
@@ -888,55 +888,55 @@ class FloresTranslationEvaluator:
         print(f"Avg LLM Only Direct - COMET: {metrics_summary['llm_only_comet_avg']:.4f} (±{metrics_summary['llm_only_comet_std']:.4f}), chrF: {metrics_summary['llm_only_chrf_avg']:.4f}")
         print(f"Avg LLM Only Primary - BLEU: {metrics_summary['llm_only_bleu_avg']:.2f} (±{metrics_summary['llm_only_bleu_std']:.2f}), BERTScore F1: {metrics_summary['llm_only_bertscore_avg']:.2f}")
      
-        print(f"Avg LLM-BTI (NLLB Base) - COMET: {metrics_summary['final_llm_bti_nllb_comet_avg']:.4f} (±{metrics_summary['final_llm_bti_nllb_comet_std']:.4f}), chrF: {metrics_summary['final_llm_bti_nllb_chrf_avg']:.4f}")
-        print(f"Avg LLM-BTI (NLLB Base) - BLEU: {metrics_summary['final_llm_bti_nllb_bleu_avg']:.2f} (±{metrics_summary['final_llm_bti_nllb_bleu_std']:.2f}), BERTScore F1: {metrics_summary['final_llm_bti_nllb_bertscore_avg']:.2f}")
+        print(f"Avg LLM-BTI (madlad Base) - COMET: {metrics_summary['final_llm_bti_madlad_comet_avg']:.4f} (±{metrics_summary['final_llm_bti_madlad_comet_std']:.4f}), chrF: {metrics_summary['final_llm_bti_madlad_chrf_avg']:.4f}")
+        print(f"Avg LLM-BTI (madlad Base) - BLEU: {metrics_summary['final_llm_bti_madlad_bleu_avg']:.2f} (±{metrics_summary['final_llm_bti_madlad_bleu_std']:.2f}), BERTScore F1: {metrics_summary['final_llm_bti_madlad_bertscore_avg']:.2f}")
         
         print(f"Avg LLM-BTI (mBART Base) - COMET: {metrics_summary['final_llm_bti_mbart_comet_avg']:.4f} (±{metrics_summary['final_llm_bti_mbart_comet_std']:.4f}), chrF: {metrics_summary['final_llm_bti_mbart_chrf_avg']:.4f}")
         print(f"Avg LLM-BTI (mBART Base) - BLEU: {metrics_summary['final_llm_bti_mbart_bleu_avg']:.2f} (±{metrics_summary['final_llm_bti_mbart_bleu_std']:.2f}), BERTScore F1: {metrics_summary['final_llm_bti_mbart_bertscore_avg']:.2f}")
       
         # --- Separate Plots for COMET and chrF ---
         methods = [
-            "NLLB Primary",
+            "madlad Primary",
             "mBART Primary",
             "LLM Only Direct",
-            "LLM-BTI (NLLB Base)",
+            "LLM-BTI (madlad Base)",
             "LLM-BTI (mBART Base)",
         ]
     
         comet_avgs = [
-            metrics_summary['primary_nllb_comet_avg'],
+            metrics_summary['primary_madlad_comet_avg'],
             metrics_summary['primary_mbart_comet_avg'],
             metrics_summary['llm_only_comet_avg'],
-            metrics_summary['final_llm_bti_nllb_comet_avg'],
+            metrics_summary['final_llm_bti_madlad_comet_avg'],
             metrics_summary['final_llm_bti_mbart_comet_avg'],
         ]
     
         comet_stds = [
-            metrics_summary['primary_nllb_comet_std'],
+            metrics_summary['primary_madlad_comet_std'],
             metrics_summary['primary_mbart_comet_std'],
             metrics_summary['llm_only_comet_std'],
-            metrics_summary['final_llm_bti_nllb_comet_std'],
+            metrics_summary['final_llm_bti_madlad_comet_std'],
             metrics_summary['final_llm_bti_mbart_comet_std'],
         ]
     
         chrf_avgs = [
-            metrics_summary['primary_nllb_chrf_avg'],
+            metrics_summary['primary_madlad_chrf_avg'],
             metrics_summary['primary_mbart_chrf_avg'],
             metrics_summary['llm_only_chrf_avg'],
-            metrics_summary['final_llm_bti_nllb_chrf_avg'],
+            metrics_summary['final_llm_bti_madlad_chrf_avg'],
             metrics_summary['final_llm_bti_mbart_chrf_avg'],
         ]
     
         chrf_stds = [
-            metrics_summary['primary_nllb_chrf_std'],
+            metrics_summary['primary_madlad_chrf_std'],
             metrics_summary['primary_mbart_chrf_std'],
             metrics_summary['llm_only_chrf_std'],
-            metrics_summary['final_llm_bti_nllb_chrf_std'],
+            metrics_summary['final_llm_bti_madlad_chrf_std'],
             metrics_summary['final_llm_bti_mbart_chrf_std'],
         ]
     
-        src_name = get_nllb_lang_name(src_code)
-        tgt_name = get_nllb_lang_name(tgt_code)
+        src_name = get_madlad_lang_name(src_code)
+        tgt_name = get_madlad_lang_name(tgt_code)
         title_suffix = f"{src_name} → {tgt_name} (N={n})"
     
         x = np.arange(len(methods))
@@ -989,13 +989,13 @@ class FloresTranslationEvaluator:
         plt.close(fig2)
         # === Plot 3: BLEU Scores ===
         bleu_avgs = [
-            metrics_summary['primary_nllb_bleu_avg'],
+            metrics_summary['primary_madlad_bleu_avg'],
             metrics_summary['primary_mbart_bleu_avg'],
             metrics_summary['llm_only_bleu_avg'],
-            metrics_summary['final_llm_bti_nllb_bleu_avg'],
+            metrics_summary['final_llm_bti_madlad_bleu_avg'],
             metrics_summary['final_llm_bti_mbart_bleu_avg'],
         ]
-        bleu_stds = [metrics_summary[k + '_std'] for k in ['primary_nllb_bleu', 'primary_mbart_bleu', 'llm_only_bleu', 'final_llm_bti_nllb_bleu', 'final_llm_bti_mbart_bleu']]
+        bleu_stds = [metrics_summary[k + '_std'] for k in ['primary_madlad_bleu', 'primary_mbart_bleu', 'llm_only_bleu', 'final_llm_bti_madlad_bleu', 'final_llm_bti_mbart_bleu']]
     
         fig3, ax3 = plt.subplots(figsize=(10, 6))
         bars3 = ax3.bar(x, bleu_avgs, yerr=bleu_stds, capsize=8, color='mediumseagreen', edgecolor='black', alpha=0.8)
@@ -1015,13 +1015,13 @@ class FloresTranslationEvaluator:
     
         # === Plot 4: BERTScore (F1) ===
         bertscore_avgs = [
-            metrics_summary['primary_nllb_bertscore_avg'],
+            metrics_summary['primary_madlad_bertscore_avg'],
             metrics_summary['primary_mbart_bertscore_avg'],
             metrics_summary['llm_only_bertscore_avg'],
-            metrics_summary['final_llm_bti_nllb_bertscore_avg'],
+            metrics_summary['final_llm_bti_madlad_bertscore_avg'],
             metrics_summary['final_llm_bti_mbart_bertscore_avg'],
         ]
-        bertscore_stds = [metrics_summary[k + '_std'] for k in ['primary_nllb_bertscore', 'primary_mbart_bertscore', 'llm_only_bertscore', 'final_llm_bti_nllb_bertscore', 'final_llm_bti_mbart_bertscore']]
+        bertscore_stds = [metrics_summary[k + '_std'] for k in ['primary_madlad_bertscore', 'primary_mbart_bertscore', 'llm_only_bertscore', 'final_llm_bti_madlad_bertscore', 'final_llm_bti_mbart_bertscore']]
     
         fig4, ax4 = plt.subplots(figsize=(10, 6))
         bars4 = ax4.bar(x, bertscore_avgs, yerr=bertscore_stds, capsize=8, color='orchid', edgecolor='black', alpha=0.8)
@@ -1070,7 +1070,7 @@ if __name__ == "__main__":
 
     MODEL_NAME = "meta-llama/llama-3.1-405b-instruct:free"
     # Initialize models
-    nllb_translator = NLLBTranslator(get_code_func=get_nllb_code, max_length=512)
+    madlad_translator = madladTranslator(get_code_func=get_madlad_code, max_length=512)
     mbart_translator = MBARTTranslator(get_code_func=get_mbart_code, max_length=512)
     critique_agent = EnhancedCritiqueAgent(model="MODEL_NAME", max_tokens=512)
     llm_only_translator = LLMOnlyTranslator(model="MODEL_NAME", max_tokens=512)
@@ -1083,8 +1083,8 @@ if __name__ == "__main__":
 
     # Main loop over language pairs
     for src_code, tgt_code in LANGUAGE_PAIRS:
-        print(f"\n\n===== Starting Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====")
-        print("--- Base NMT for LLM-BTI: NLLB and mBART ---\n")
+        print(f"\n\n===== Starting Evaluation for {get_madlad_lang_name(src_code)} → {get_madlad_lang_name(tgt_code)} =====")
+        print("--- Base NMT for LLM-BTI: madlad and mBART ---\n")
 
         try:
             # Calculate available examples for this pair
@@ -1104,7 +1104,7 @@ if __name__ == "__main__":
                 src_code=src_code,
                 tgt_code=tgt_code,
                 indices=indices_to_use,
-                nllb_translator=nllb_translator,
+                madlad_translator=madlad_translator,
                 mbart_translator=mbart_translator,
                 critique_agent=critique_agent,
                 llm_only_translator=llm_only_translator,
@@ -1113,7 +1113,7 @@ if __name__ == "__main__":
                 debug=False  # Set to True only for testing/debugging
             )
 
-            print(f"===== Completed Evaluation for {get_nllb_lang_name(src_code)} → {get_nllb_lang_name(tgt_code)} =====\n")
+            print(f"===== Completed Evaluation for {get_madlad_lang_name(src_code)} → {get_madlad_lang_name(tgt_code)} =====\n")
 
         except Exception as e:
             print(f"!!! Error during {src_code} → {tgt_code}: {e}")
