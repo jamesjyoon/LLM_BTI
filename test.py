@@ -207,10 +207,11 @@ class BaseTranslator:
         raise NotImplementedError("Subclasses must implement 'translate' method.")
 
 class madladTranslator(BaseTranslator):
-    def __init__(self, model_name="google/madlad400-10b", name="madladTranslator", max_length=512, get_code_func=None):
+    def __init__(self, model_name="google/madlad400-10b-mt", name="madladTranslator", max_length=512, get_code_func=None):
         super().__init__(name, max_length)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, token=HUGGING_FACE_HUB_TOKEN)       
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name, token=HUGGING_FACE_HUB_TOKEN)
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name, token=HUGGING_FACE_HUB_TOKEN, device_map="auto", 
+            torch_dtype="auto")
         self.get_code_func = get_code_func if get_code_func is not None else get_madlad_code
 
     def get_forced_bos_token_id(self, tgt_code: str) -> int:
@@ -773,7 +774,7 @@ class FloresTranslationEvaluator:
         final_llm_bti_mbart_bleu = self.bleu_metric.compute(predictions=[final_translation_llm_bti_mbart], references=[[reference_translation]])["bleu"] * 100
 
         # BERTScore (use F1; lang code for better model selection – adjust per target language)
-        tgt_lang_code = tgt_code.split("_")[0]  # e.g., "kor" or "jpn"
+        bertscore_lang = tgt_lang_code
         bertscore_results = self.bertscore_metric.compute(
             predictions=[primary_translation_madlad, primary_translation_mbart, llm_only_translation, final_translation_llm_bti_madlad, final_translation_llm_bti_mbart],
             references=[reference_translation] * 5,
@@ -1068,10 +1069,11 @@ if __name__ == "__main__":
     NUM_EXAMPLES_TO_EVALUATE = 100
     MAX_ITERATIONS_FOR_LLMBTI = 5
 
-    MODEL_NAME = "meta-llama/llama-3.1-405b-instruct:free"
     # Initialize models
     madlad_translator = madladTranslator(get_code_func=get_madlad_code, max_length=512)
     mbart_translator = MBARTTranslator(get_code_func=get_mbart_code, max_length=512)
+    
+    MODEL_NAME = "meta-llama/llama-3.1-405b-instruct:free"
     critique_agent = EnhancedCritiqueAgent(model="MODEL_NAME", max_tokens=512)
     llm_only_translator = LLMOnlyTranslator(model="MODEL_NAME", max_tokens=512)
 
