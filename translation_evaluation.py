@@ -1086,8 +1086,10 @@ if __name__ == "__main__":
     critique_agent = EnhancedCritiqueAgent(model="llama-3.3-70b-versatile", max_tokens=512)
     llm_only_translator = LLMOnlyTranslator(model="llama-3.3-70b-versatile", max_tokens=512)
 
-    similarity_calculator = SentenceTransformerSimilarityCalculator()
-    print("Using Sentence-Transformer based similarity for discrepancy detection.")
+    similarity_calculator = LCSBasedSimilarityCalculator()
+    print("Using LCS based similarity for discrepancy detection.")
+    # similarity_calculator = SentenceTransformerSimilarityCalculator()
+    # print("Using Sentence-Transformer based similarity for discrepancy detection.")
 
     # Create evaluator
     flores_evaluator = FloresTranslationEvaluator(split='devtest')
