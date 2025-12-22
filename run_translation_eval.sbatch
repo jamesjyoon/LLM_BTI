@@ -7,7 +7,7 @@
 #SBATCH --output=translation_eval_%j.out     # Standard output log (%j = job ID)
 #SBATCH --error=translation_eval_%j.err      # Standard error log
 #SBATCH --qos=coc-ice
-#SBATCH --time=24:00:00   
+#SBATCH --time=08:00:00   
 
 # Load required modules
 module purge
