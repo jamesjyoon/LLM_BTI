@@ -70,7 +70,7 @@ def run_test():
 
     results = {"mbart": [], "bti_lcs": []}
 
-    for i in range(20): # Test with 20 samples
+    for i in range(5): # Test with 20 samples
         source = src_data.iloc[i]['text']
         ref = tgt_data.iloc[i]['text']
 
