@@ -258,7 +258,7 @@ if __name__ == "__main__":
     evaluator.evaluate_pair(
         src_code="eng_Latn", 
         tgt_code="npi_Deva", 
-        num_examples=50, 
+        num_examples=5, 
         nmt=nmt, 
         aya_trans=aya_trans, 
         pipeline=bti_pipeline
