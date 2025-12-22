@@ -207,7 +207,7 @@ class BaseTranslator:
         raise NotImplementedError("Subclasses must implement 'translate' method.")
 
 class NLLBTranslator(BaseTranslator):
-    def __init__(self, model_name="meta-llama/llama-3.1-405b-instruct:free", name="NLLBTranslator", max_length=512, get_code_func=None):
+    def __init__(self, model_name="Unbabel/TowerInstruct-7B-v0.2", name="NLLBTranslator", max_length=512, get_code_func=None):
         super().__init__(name, max_length)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, token=HUGGING_FACE_HUB_TOKEN)       
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name, token=HUGGING_FACE_HUB_TOKEN)
