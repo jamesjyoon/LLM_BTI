@@ -47,22 +47,47 @@ HUGGING_FACE_HUB_TOKEN = os.getenv("HUGGING_FACE_HUB_TOKEN")
 # ----------------------------------------------------------------------------
 # Asynchronous generate helper using Portkey's chat completions API
 # ----------------------------------------------------------------------------
+import time
+import json
+
 async def async_generate(prompt: str, model: str, temperature: float, max_tokens: int) -> tuple:
     start_time = time.perf_counter()
     client = Portkey(api_key=PORTKEY_API_KEY, virtual_key=GROQ_VIRTUAL_KEY)
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=max_tokens,
-        temperature=temperature
-    )
-    # Adding a small delay to avoid hitting rate limits if calls are too frequent
-    await asyncio.sleep(0.5) 
-    end_time = time.perf_counter()
-    duration = end_time - start_time
-    prompt_tokens = response.usage.prompt_tokens if response.usage else 0
-    completion_tokens = response.usage.completion_tokens if response.usage else 0
-    return response.choices[0].message.content.strip(), duration, prompt_tokens, completion_tokens
+    
+    max_retries = 10
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=temperature
+            )
+            # Success → break
+            end_time = time.perf_counter()
+            duration = end_time - start_time
+            prompt_tokens = response.usage.prompt_tokens if response.usage else 0
+            completion_tokens = response.usage.completion_tokens if response.usage else 0
+            return response.choices[0].message.content.strip(), duration, prompt_tokens, completion_tokens
+
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or "rate_limit" in error_str.lower():
+                # Extract retry-after if available
+                try:
+                    error_data = json.loads(error_str.split("body: ")[-1]) if "body:" in error_str else {}
+                    retry_after = float(error_data.get('error', {}).get('message', '').split("try again in ")[-1].split("s")[0])
+                except:
+                    retry_after = (2 ** attempt) * 10  # Exponential backoff fallback (10s, 20s, 40s...)
+
+                print(f"Rate limit hit. Retrying in {retry_after:.1f} seconds (attempt {attempt+1}/{max_retries})...")
+                await asyncio.sleep(retry_after + 5)  # Add buffer
+            else:
+                print(f"Non-rate-limit error: {e}")
+                raise  # Re-raise if not recoverable
+
+    # If all retries fail
+    return "Rate Limit Exceeded (Fallback)", 0, 0, 0
 
 # -----------------------------
 # Language Code Mappers (NLLB and mBART)
