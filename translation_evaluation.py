@@ -1052,7 +1052,7 @@ if __name__ == "__main__":
         #  ("eng_Latn", "asm_Beng"),
     ]
 
-    NUM_EXAMPLES_TO_EVALUATE = 500
+    NUM_EXAMPLES_TO_EVALUATE = 100
     MAX_ITERATIONS_FOR_LLMBTI = 5
 
     # Initialize models
