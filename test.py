@@ -84,42 +84,12 @@ async def async_generate(prompt: str, model: str, temperature: float, max_tokens
 # -----------------------------
 # Language Code Mappers (madlad and mBART)
 # -----------------------------
+# Update the mapping function
 def get_madlad_code(language: str) -> str:
-    """
-    Map common language names to their madlad language codes.
-    madlad (No Language Left Behind)
-    """
     mapping = {
-        "japanese": "jpn_Jpan", "irish": "gle_Latn", "nepali": "npi_Deva",
-        "swahili": "swh_Latn", "burmese": "mya_Mymr", "swedish": "swe_Latn",
-        "thai": "tha_Thai", "urdu": "urd_Arab", "arabic": "arb_Arab",
-        "chinese (simplified)": "zho_Hans", "chinese (traditional)": "zho_Hant",
-        "korean": "kor_Hang", "english": "eng_Latn", "french": "fra_Latn",
-        "spanish": "spa_Latn", "russian": "rus_Cyrl", "hindi": "hin_Deva",
-        "bengali": "ben_Beng", "amharic": "amh_Ethi", "vietnamese": "vie_Latn",
-        "tagalog": "tgl_Latn", "gujarati": "guj_Gujr", "lao": "lao_Laoo",
-        "oriya": "ory_Orya", "assamese": "asm_Beng", "khmer": "khm_Khmr",
-        "malayalam": "mal_Mlym", "marathi": "mar_Deva", "maithili": "mai_Deva",
-        "telugu": "tel_Telu", "tamil": "tam_Taml", "sanskrit": "san_Deva",
-        "tibetan": "bod_Tibt", "georgian": "kat_Geor", "kazakh": "kaz_Cyrl",
-        "kyrgyz": "kir_Cyrl", "mongolian": "mon_Cyrl", "uzbek": "uzb_Latn",
-        "pashto": "pbu_Arab", "persian": "pes_Arab", "punjabi": "pan_Guru",
-        "sindhi": "snd_Arab", "azerbaijani": "azj_Latn", "bashkir": "bak_Cyrl",
-        "belarusian": "bel_Cyrl", "bulgarian": "bul_Cyrl", "catalan": "cat_Latn",
-        "cebuano": "ceb_Latn", "croatian": "hrv_Latn", "czech": "ces_Latn",
-        "danish": "dan_Latn", "dutch": "nld_Latn", "estonian": "est_Latn",
-        "finnish": "fin_Latn", "german": "deu_Latn", "greek": "ell_Grek",
-        "hebrew": "heb_Hebr", "hungarian": "hun_Latn", "icelandic": "isl_Latn",
-        "indonesian": "ind_Latn", "italian": "ita_Latn", "latvian": "lav_Latn",
-        "lithuanian": "lit_Latn", "macedonian": "mkd_Cyrl", "malagasy": "plt_Latn",
-        "malay": "zsm_Latn", "maltese": "mlt_Latn", "norwegian": "nno_Latn",
-        "polish": "pol_Latn", "portuguese": "por_Latn", "romanian": "ron_Latn",
-        "serbian": "srp_Cyrl", "slovak": "slk_Latn", "slovenian": "slv_Latn",
-        "thai": "tha_Thai", "turkish": "tur_Latn", "ukrainian": "ukr_Cyrl",
-        "vietnamese": "vie_Latn", "welsh": "cym_Latn",
+        "eng_latn": "<2en>", "npi_deva": "<2ne>", "jpn_jpan": "<2ja>", 
+        "kor_hang": "<2ko>", "tha_thai": "<2th>", "hin_deva": "<2hi>"
     }
-    # Handle direct codes if passed
-    if language.lower() in [v.lower() for v in mapping.values()]: return language
     return mapping.get(language.lower(), language)
 
 def get_madlad_lang_name(madlad_code: str) -> str:
@@ -207,7 +177,7 @@ class BaseTranslator:
         raise NotImplementedError("Subclasses must implement 'translate' method.")
 
 class madladTranslator(BaseTranslator):
-    def __init__(self, model_name="google/madlad400-10b-mt", name="madladTranslator", max_length=512, get_code_func=None):
+    def __init__(self, model_name="google/madlad400-3b-mt", name="madladTranslator", max_length=512, get_code_func=None):
         super().__init__(name, max_length)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, token=HUGGING_FACE_HUB_TOKEN)       
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name, token=HUGGING_FACE_HUB_TOKEN, device_map="auto", 
@@ -1051,7 +1021,7 @@ class FloresTranslationEvaluator:
 if __name__ == "__main__":
     # List of language pairs to evaluate
     LANGUAGE_PAIRS = [
-        ("eng_Latn", "npi_Deva"),    
+        ("eng_Latn", "npi_Deva")    
         # ("eng_Latn", "mya_Mymr"), 
         # ("eng_Latn", "tha_Thai"),
         # ("eng_Latn", "swh_Latn"),
@@ -1069,13 +1039,14 @@ if __name__ == "__main__":
     NUM_EXAMPLES_TO_EVALUATE = 100
     MAX_ITERATIONS_FOR_LLMBTI = 5
 
-    # Initialize models
-    madlad_translator = madladTranslator(get_code_func=get_madlad_code, max_length=512)
-    mbart_translator = MBARTTranslator(get_code_func=get_mbart_code, max_length=512)
-    
-    MODEL_NAME = "meta-llama/llama-3.1-405b-instruct:free"
-    critique_agent = EnhancedCritiqueAgent(model="MODEL_NAME", max_tokens=512)
-    llm_only_translator = LLMOnlyTranslator(model="MODEL_NAME", max_tokens=512)
+   # Define the model string variable first
+    LLM_MODEL_ID = "meta-llama/llama-3.1-405b-instruct:free"
+
+    # Pass the variable, NOT the string "MODEL_NAME"
+    madlad_translator = madladTranslator(model_name="google/madlad400-3b-mt")
+    mbart_translator = MBARTTranslator()
+    critique_agent = EnhancedCritiqueAgent(model=LLM_MODEL_ID)
+    llm_only_translator = LLMOnlyTranslator(model=LLM_MODEL_ID)
 
     similarity_calculator = SentenceTransformerSimilarityCalculator()
     print("Using Sentence-Transformer based similarity for discrepancy detection.")
