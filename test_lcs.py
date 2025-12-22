@@ -83,7 +83,7 @@ class OptimizedBTIProcessor:
 # -----------------------------
 # Main Evaluation
 # -----------------------------
-def run_optimized_experiment(num_samples=50):
+def run_optimized_experiment(num_samples=5):
     proc = OptimizedBTIProcessor()
     lcs = LCSCalculator()
     
