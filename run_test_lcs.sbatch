@@ -54,7 +54,7 @@ fi
 
 # Run the Python script
 echo "Starting translation evaluation pipeline..."
-python test.py
+python test_lcs.py
 
 # Check exit status
 if [ $? -eq 0 ]; then
