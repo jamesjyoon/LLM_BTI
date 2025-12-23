@@ -9,6 +9,7 @@ from datasets import load_dataset
 import evaluate
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM, BitsAndBytesConfig
 from sentence_transformers import SentenceTransformer, util
+import re
 
 # --- Cluster Setup ---
 matplotlib.use('Agg') # Necessary for remote/cluster environments
@@ -72,19 +73,41 @@ class EchoRefineProcessor:
         outputs = self.llama_mod.generate(**inputs, max_new_tokens=256, do_sample=False)
         return self.llama_tok.decode(outputs[0][inputs.input_ids.shape[-1]:], skip_special_tokens=True).strip()
 
+# --- IMPROVED: Robust Extraction Logic ---
     def llama_reason_and_refine(self, source, draft, back_trans):
         messages = [
-            {"role": "system", "content": "Analyze English-to-English shifts to fix the Nepali Draft."},
+            {"role": "system", "content": "You are a professional Nepali editor. You fix Nepali translations based on back-translation errors. Output ONLY the final Nepali text after the marker 'RESULT:'"},
             {"role": "user", "content": (
-                f"Original English: {source}\nNepali Draft: {draft}\nBack-translation: {back_trans}\n\n"
-                "Analysis: Compare original and back-translation.\nFixed Translation: Provide corrected Nepali."
+                f"Original English: {source}\n"
+                f"Current Nepali Draft: {draft}\n"
+                f"Back-translation of draft: {back_trans}\n\n"
+                "Analyze the errors, then provide the corrected Nepali translation.\n"
+                "Format:\nReasoning: [Brief English]\nRESULT: [Nepali Text Only]"
             )}
         ]
         prompt = self.llama_tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.llama_tok(prompt, return_tensors="pt").to(self.llama_mod.device)
-        outputs = self.llama_mod.generate(**inputs, max_new_tokens=400, do_sample=False)
-        res = self.llama_tok.decode(outputs[0][inputs.input_ids.shape[-1]:], skip_special_tokens=True)
-        return res.split("Fixed Translation:")[-1].strip() if "Fixed Translation:" in res else res.strip()
+        
+        with torch.no_grad():
+            outputs = self.llama_mod.generate(**inputs, max_new_tokens=300, do_sample=False, pad_token_id=self.llama_tok.eos_token_id)
+        
+        res = self.llama_tok.decode(outputs[0][inputs.input_ids.shape[-1]:], skip_special_tokens=True).strip()
+        
+        # Robust Extraction using Split and Regex
+        if "RESULT:" in res:
+            final_text = res.split("RESULT:")[-1].strip()
+        else:
+            # Fallback: find the last block of non-Latin characters
+            parts = re.split(r'[a-zA-Z]:', res)
+            final_text = parts[-1].strip()
+    
+        # LANGUAGE GUARD: If the final text still contains significant English/Latin characters, 
+        # it's a failed refinement. Return the original draft instead.
+        english_char_count = len(re.findall(r'[a-zA-Z]', final_text))
+        if english_char_count > (len(final_text) * 0.3): # If >30% is English
+            return draft 
+            
+        return final_text
 
 # -----------------------------
 # 3. Main Evaluation Execution
@@ -174,3 +197,7 @@ def run_advanced_eval(num_samples=50):
 
 if __name__ == "__main__":
     run_advanced_eval(num_samples=5)
+    print(f"--- Sample {i} ---")
+    print(f"Source: {src}")
+    print(f"mBART:  {mbart_draft}")
+    print(f"Refined: {current_refined}")
