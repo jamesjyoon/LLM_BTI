@@ -1,145 +1,70 @@
 import os
-import time
 import torch
 import numpy as np
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-from datasets import load_dataset
-import evaluate
 from sentence_transformers import SentenceTransformer, util
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM, BitsAndBytesConfig
 
-# Configuration
-# Aya-101 supports 101 languages including Nepali
-LLM_MODEL_ID = "CohereForAI/aya-101" 
-MBART_MODEL_ID = "facebook/mbart-large-50-many-to-many-mmt"
-
-# -----------------------------
-# Language Code Mapper (mBART)
-# -----------------------------
-def get_mbart_code(language: str) -> str:
-    mapping = {"english": "en_XX", "nepali": "ne_NP", "hindi": "hi_IN"}
-    clean_lang = language.split('_')[0].lower()
-    if clean_lang == "eng": return "en_XX"
-    if clean_lang == "npi": return "ne_NP"
-    return mapping.get(clean_lang, "en_XX")
-
-# -----------------------------
-# Aya-101 Handler (Seq2Seq)
-# -----------------------------
-class LocalAya101Handler:
-    def __init__(self, model_id):
-        print(f"Loading Aya-101 (13B) onto local GPUs...")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_id)
-        # Aya-101 is ~26GB in float16, fits easily on one A100-40GB
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(
-            model_id,
-            torch_dtype=torch.float16,
-            device_map="auto" 
-        )
-
-    def generate(self, prompt: str):
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
-        outputs = self.model.generate(
-            **inputs, 
-            max_new_tokens=256,
-            do_sample=False # Keep it deterministic for evaluation
-        )
-        return self.tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
-
-# -----------------------------
-# mBART Handler
-# -----------------------------
-class MBARTTranslator:
-    def __init__(self, model_name=MBART_MODEL_ID):
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        # Load mBART on the first GPU
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to("cuda:0")
-
-    def translate(self, source_text, src_lang, tgt_lang):
-        src_code = get_mbart_code(src_lang)
-        tgt_code = get_mbart_code(tgt_lang)
-        self.tokenizer.src_lang = src_code
-        inputs = self.tokenizer(source_text, return_tensors="pt", padding=True).to("cuda:0")
-        
-        outputs = self.model.generate(
-            **inputs,
-            forced_bos_token_id=self.tokenizer.lang_code_to_id[tgt_code],
-            max_length=256
-        )
-        return self.tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
-
-# -----------------------------
-# Similarity Logic
-# -----------------------------
-class SimilarityCalculator:
+# --- NEW: Semantic Similarity Calculator ---
+class SemanticTrigger:
     def __init__(self):
-        self.model = SentenceTransformer("all-MiniLM-L6-v2")
+        # Using a tiny, fast model for the verification step
+        self.model = SentenceTransformer('all-MiniLM-L6-v2')
 
-    def calculate_similarity(self, text1, text2):
-        emb1 = self.model.encode(text1, convert_to_tensor=True)
-        emb2 = self.model.encode(text2, convert_to_tensor=True)
+    def check(self, original, back_trans):
+        emb1 = self.model.encode(original, convert_to_tensor=True)
+        emb2 = self.model.encode(back_trans, convert_to_tensor=True)
         return util.pytorch_cos_sim(emb1, emb2).item()
 
-# -----------------------------
-# Main Evaluation Pipeline
-# -----------------------------
-def run_evaluation():
-    # 1. Init Local Models
-    aya = LocalAya101Handler(LLM_MODEL_ID)
-    nmt = MBARTTranslator()
-    sim_calc = SimilarityCalculator()
-    
-    # 2. Load Dataset
-    dataset = load_dataset("openlanguagedata/flores_plus", split='devtest')
-    df = dataset.to_pandas()
-    chrf = evaluate.load("chrf")
+# --- IMPROVED: Reasoning-Based Refiner ---
+class AdvancedBTIProcessor:
+    # ... (Keep previous __init__ and mbart_translate methods) ...
 
-    # Filter for English and Nepali
-    eng_df = df[df['iso_639_3'] == 'eng'].reset_index()
-    npi_df = df[df['iso_639_3'] == 'npi'].reset_index()
-
-    num_samples = 50
-    results = {"mBART_Only": [], "LLM_BTI": [], "Aya_Direct": []}
-
-    print(f"Starting Local Evaluation (English -> Nepali)...")
-
-    for i in range(num_samples):
-        source = eng_df.iloc[i]['text']
-        reference = npi_df.iloc[i]['text']
-
-        # Method 1: mBART Direct
-        mbart_translation = nmt.translate(source, "english", "nepali")
-
-        # Method 2: Aya Direct
-        aya_prompt = f"Translate from English to Nepali: {source}"
-        aya_direct = aya.generate(aya_prompt)
-
-        # Method 3: LLM-BTI (Refinement)
-        # Back-translate with mBART
-        back_trans = nmt.translate(mbart_translation, "nepali", "english")
-        
-        # Refine with Aya
-        refine_prompt = (
+    def llama_advanced_refine(self, source, draft, back_trans):
+        """Uses Chain-of-Thought to analyze errors before fixing them."""
+        prompt = (
+            f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
+            f"You are a linguistic auditor specializing in English and Nepali. "
+            f"Your goal is to compare an 'Original English' sentence with a 'Back-translated English' sentence "
+            f"to identify meaning shifts in the 'Nepali Draft'.\n\n"
+            f"<|start_header_id|>user<|end_header_id|>\n\n"
             f"Original English: {source}\n"
-            f"Draft Nepali Translation: {mbart_translation}\n"
-            f"Back-translation to English: {back_trans}\n"
-            f"Please provide an improved Nepali translation based on the errors found in the back-translation."
+            f"Current Nepali Draft: {draft}\n"
+            f"Back-translation into English: {back_trans}\n\n"
+            f"Step 1: Briefly list any contradictions or missing info between the Original and the Back-translation.\n"
+            f"Step 2: Provide the final, corrected Nepali translation.\n\n"
+            f"Format your response as:\n"
+            f"Analysis: [your analysis]\n"
+            f"Fixed Translation: [Nepali text only]<|eot_id|>"
+            f"<|start_header_id|>assistant<|end_header_id|>\n\n"
+            f"Analysis:"
         )
-        bti_translation = aya.generate(refine_prompt)
+        
+        # Use greedy decoding for Step 1 & 2
+        inputs = self.llama_tok(prompt, return_tensors="pt").to(self.llama_mod.device)
+        outputs = self.llama_mod.generate(**inputs, max_new_tokens=300, do_sample=False)
+        full_text = self.llama_tok.decode(outputs[0], skip_special_tokens=True)
+        
+        # Extract only the portion after "Fixed Translation:"
+        if "Fixed Translation:" in full_text:
+            return full_text.split("Fixed Translation:")[-1].strip()
+        return full_text.strip()
 
-        # Score them
-        results["mBART_Only"].append(chrf.compute(predictions=[mbart_translation], references=[[reference]])['score'])
-        results["Aya_Direct"].append(chrf.compute(predictions=[aya_direct], references=[[reference]])['score'])
-        results["LLM_BTI"].append(chrf.compute(predictions=[bti_translation], references=[[reference]])['score'])
-
-        if i % 5 == 0:
-            print(f"Progress: {i}/{num_samples}")
-
-    print("\n" + "="*30)
-    print(f"RESULTS (Avg chrF)")
-    print(f"mBART Only: {np.mean(results['mBART_Only']):.2f}")
-    print(f"Aya Direct: {np.mean(results['Aya_Direct']):.2f}")
-    print(f"LLM-BTI (Refined): {np.mean(results['LLM_BTI']):.2f}")
-    print("="*30)
-
-if __name__ == "__main__":
-    run_evaluation()
+# --- OPTIMIZED: The "Smart" Loop ---
+def run_advanced_bti(system, semantic_checker, source_text):
+    # 1. Start with the strongest base (mBART)
+    current_nepali = system.mbart_translate(source_text, "eng", "npi")
+    
+    # 2. Iterative loop with Semantic Exit
+    for _ in range(2): # 2 iterations is usually the 'Sweet Spot' for 70B models
+        back_trans = system.mbart_translate(current_nepali, "npi", "eng")
+        
+        # Check meaning, not just word overlap
+        semantic_score = semantic_checker.check(source_text, back_trans)
+        
+        if semantic_score > 0.95: # Very high semantic match
+            break
+            
+        # Refine using Reasoning
+        current_nepali = system.llama_advanced_refine(source_text, current_nepali, back_trans)
+        
+    return current_nepali
