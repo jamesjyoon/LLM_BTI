@@ -102,7 +102,7 @@ class EchoRefineProcessor:
 # -----------------------------
 # 3. Execution Logic
 # -----------------------------
-def run_eval(num_samples=50):
+def run_eval(num_samples=100):
     proc = EchoRefineProcessor()
     auditor = SemanticAuditor()
     
@@ -176,4 +176,4 @@ def run_eval(num_samples=50):
     print("Done. Results saved to echorefine_results.png")
 
 if __name__ == "__main__":
-    run_eval(num_samples=5)
+    run_eval(num_samples=100)
