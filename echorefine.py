@@ -3,30 +3,33 @@ import time
 import torch
 import warnings
 import numpy as np
+import difflib
 import matplotlib
 import matplotlib.pyplot as plt
+import re
 from datasets import load_dataset
 import evaluate
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM, BitsAndBytesConfig
 from sentence_transformers import SentenceTransformer, util
-import re
 
 # --- Cluster Setup ---
-matplotlib.use('Agg') # Necessary for remote/cluster environments
+matplotlib.use('Agg') 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 warnings.filterwarnings("ignore")
 
-# --- Configuration ---
+# Load Token from environment
+HUGGING_FACE_HUB_TOKEN = os.getenv("HUGGING_FACE_HUB_TOKEN")
+
+# Configuration
 LLAMA_MODEL_ID = "meta-llama/Llama-3.1-70B-Instruct" 
 MBART_MODEL_ID = "facebook/mbart-large-50-many-to-many-mmt"
 SEMANTIC_MODEL_ID = "all-MiniLM-L6-v2"
-HUGGING_FACE_HUB_TOKEN = os.getenv("HUGGING_FACE_HUB_TOKEN")
 
 MAX_ITERATIONS = 2
 SEMANTIC_CONVERGENCE = 0.95 
 
 # -----------------------------
-# 1. Advanced Verification Tools
+# 1. Semantic Auditor
 # -----------------------------
 class SemanticAuditor:
     def __init__(self):
@@ -38,7 +41,7 @@ class SemanticAuditor:
         return util.pytorch_cos_sim(emb1, emb2).item()
 
 # -----------------------------
-# 2. Local Model Processor
+# 2. Main Processor
 # -----------------------------
 class EchoRefineProcessor:
     def __init__(self):
@@ -49,7 +52,7 @@ class EchoRefineProcessor:
             bnb_4bit_use_double_quant=True,
         )
 
-        print(f"Loading Llama-3.1-70B (4-bit)...")
+        print(f"Loading {LLAMA_MODEL_ID}...")
         self.llama_tok = AutoTokenizer.from_pretrained(LLAMA_MODEL_ID, token=HUGGING_FACE_HUB_TOKEN)
         self.llama_mod = AutoModelForCausalLM.from_pretrained(
             LLAMA_MODEL_ID, quantization_config=bnb_config, device_map="auto", token=HUGGING_FACE_HUB_TOKEN
@@ -67,137 +70,110 @@ class EchoRefineProcessor:
         return self.nmt_tok.decode(outputs[0], skip_special_tokens=True)
 
     def llama_direct(self, source):
-        messages = [{"role": "user", "content": f"Translate to Nepali. Only output the text: {source}"}]
+        messages = [{"role": "user", "content": f"Translate to Nepali. Output only the Nepali text: {source}"}]
         prompt = self.llama_tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.llama_tok(prompt, return_tensors="pt").to(self.llama_mod.device)
-        outputs = self.llama_mod.generate(**inputs, max_new_tokens=256, do_sample=False)
+        outputs = self.llama_mod.generate(**inputs, max_new_tokens=256, do_sample=False, pad_token_id=self.llama_tok.eos_token_id)
         return self.llama_tok.decode(outputs[0][inputs.input_ids.shape[-1]:], skip_special_tokens=True).strip()
 
-# --- IMPROVED: Robust Extraction Logic ---
     def llama_reason_and_refine(self, source, draft, back_trans):
         messages = [
-            {"role": "system", "content": "You are a professional Nepali editor. You fix Nepali translations based on back-translation errors. Output ONLY the final Nepali text after the marker 'RESULT:'"},
-            {"role": "user", "content": (
-                f"Original English: {source}\n"
-                f"Current Nepali Draft: {draft}\n"
-                f"Back-translation of draft: {back_trans}\n\n"
-                "Analyze the errors, then provide the corrected Nepali translation.\n"
-                "Format:\nReasoning: [Brief English]\nRESULT: [Nepali Text Only]"
-            )}
+            {"role": "system", "content": "You are a professional Nepali editor. Fix errors based on back-translation. Output the reasoning, then the final Nepali text after the marker 'RESULT:'"},
+            {"role": "user", "content": f"Original English: {source}\nNepali Draft: {draft}\nBack-translation: {back_trans}\n\nAnalysis: Compare Original and Back-translation.\nRESULT: [Corrected Nepali]"}
         ]
         prompt = self.llama_tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.llama_tok(prompt, return_tensors="pt").to(self.llama_mod.device)
+        outputs = self.llama_mod.generate(**inputs, max_new_tokens=400, do_sample=False, pad_token_id=self.llama_tok.eos_token_id)
+        raw_res = self.llama_tok.decode(outputs[0][inputs.input_ids.shape[-1]:], skip_special_tokens=True).strip()
         
-        with torch.no_grad():
-            outputs = self.llama_mod.generate(**inputs, max_new_tokens=300, do_sample=False, pad_token_id=self.llama_tok.eos_token_id)
-        
-        res = self.llama_tok.decode(outputs[0][inputs.input_ids.shape[-1]:], skip_special_tokens=True).strip()
-        
-        # Robust Extraction using Split and Regex
-        if "RESULT:" in res:
-            final_text = res.split("RESULT:")[-1].strip()
+        # Robust Extraction
+        if "RESULT:" in raw_res:
+            final_text = raw_res.split("RESULT:")[-1].strip()
         else:
-            # Fallback: find the last block of non-Latin characters
-            parts = re.split(r'[a-zA-Z]:', res)
-            final_text = parts[-1].strip()
-    
-        # LANGUAGE GUARD: If the final text still contains significant English/Latin characters, 
-        # it's a failed refinement. Return the original draft instead.
-        english_char_count = len(re.findall(r'[a-zA-Z]', final_text))
-        if english_char_count > (len(final_text) * 0.3): # If >30% is English
-            return draft 
+            final_text = raw_res.split("\n")[-1].strip() # Fallback to last line
+
+        # Language Guard: If output contains more than 20% English characters, it's failed. Revert to draft.
+        english_chars = len(re.findall(r'[a-zA-Z]', final_text))
+        if len(final_text) > 0 and (english_chars / len(final_text)) > 0.2:
+            return draft
             
         return final_text
 
 # -----------------------------
-# 3. Main Evaluation Execution
+# 3. Execution Logic
 # -----------------------------
-def run_advanced_eval(num_samples=50):
+def run_eval(num_samples=50):
     proc = EchoRefineProcessor()
     auditor = SemanticAuditor()
     
-    chrf = evaluate.load("chrf")
-    bleu = evaluate.load("bleu")
-    bertscore = evaluate.load("bertscore")
-    comet = evaluate.load("comet")
+    metrics = {
+        "chrf": evaluate.load("chrf"),
+        "bleu": evaluate.load("bleu"),
+        "bertscore": evaluate.load("bertscore"),
+        "comet": evaluate.load("comet")
+    }
 
     dataset = load_dataset("openlanguagedata/flores_plus", split='devtest')
     df = dataset.to_pandas()
     eng_df = df[df['iso_639_3'] == 'eng'].reset_index()
     npi_df = df[df['iso_639_3'] == 'npi'].reset_index()
 
-    eval_data = {"mBART": [], "Llama_Direct": [], "EchoRefine": [], "Ref": [], "Src": []}
+    eval_store = {"mBART": [], "Llama_Direct": [], "EchoRefine": [], "Ref": [], "Src": []}
 
-    print(f"Evaluating {num_samples} samples...")
     for i in range(num_samples):
         src = eng_df.iloc[i]['text']
         ref = npi_df.iloc[i]['text']
 
-        # Methods
-        draft = proc.mbart_translate(src, "eng", "npi")
-        direct = proc.llama_direct(src)
+        # Step A: Baselines
+        mbart_draft = proc.mbart_translate(src, "eng", "npi")
+        llama_dir = proc.llama_direct(src)
         
-        current_refined = draft
-        for _ in range(MAX_ITERATIONS):
+        # Step B: Iterative Refinement
+        current_refined = mbart_draft
+        for iteration in range(MAX_ITERATIONS):
             back = proc.mbart_translate(current_refined, "npi", "eng")
-            if auditor.get_score(src, back) >= SEMANTIC_CONVERGENCE: break
+            score = auditor.get_score(src, back)
+            if score >= SEMANTIC_CONVERGENCE: break
             current_refined = proc.llama_reason_and_refine(src, current_refined, back)
 
-        eval_data["mBART"].append(draft)
-        eval_data["Llama_Direct"].append(direct)
-        eval_data["EchoRefine"].append(current_refined)
-        eval_data["Ref"].append(ref)
-        eval_data["Src"].append(src)
-        if (i+1) % 5 == 0: print(f"Progress: {i+1}/{num_samples}")
-
-    # -----------------------------
-    # 4. Scoring & Visualization
-    # -----------------------------
-    final_metrics = {}
-    metric_names = ["chrF", "BLEU", "BERTScore", "COMET"]
-    
-    for model in ["mBART", "Llama_Direct", "EchoRefine"]:
-        preds = eval_data[model]
-        refs_nested = [[r] for r in eval_data["Ref"]]
-        refs_flat = eval_data["Ref"]
-        srcs = eval_data["Src"]
-
-        ch = chrf.compute(predictions=preds, references=refs_nested)['score']
-        bl = bleu.compute(predictions=preds, references=refs_nested)['bleu'] * 100
-        bs = np.mean(bertscore.compute(predictions=preds, references=refs_flat, lang="ne")['f1']) * 100
-        cm = comet.compute(predictions=preds, references=refs_flat, sources=srcs)['mean_score'] * 100
+        eval_store["mBART"].append(mbart_draft)
+        eval_store["Llama_Direct"].append(llama_dir)
+        eval_store["EchoRefine"].append(current_refined)
+        eval_store["Ref"].append(ref)
+        eval_store["Src"].append(src)
         
-        final_metrics[model] = [ch, bl, bs, cm]
+        # DEBUG PRINTS INSIDE LOOP
+        print(f"--- Sample {i} ---")
+        print(f"Source: {src[:50]}...")
+        print(f"Result: {current_refined[:50]}...")
 
-    # Plotting Logic
-    x = np.arange(len(metric_names))
+    # Scoring
+    final_scores = {}
+    for model in ["mBART", "Llama_Direct", "EchoRefine"]:
+        preds = eval_store[model]
+        refs_nested = [[r] for r in eval_store["Ref"]]
+        refs_flat = eval_store["Ref"]
+        srcs = eval_store["Src"]
+
+        ch = metrics["chrf"].compute(predictions=preds, references=refs_nested)['score']
+        bl = metrics["bleu"].compute(predictions=preds, references=refs_nested)['bleu'] * 100
+        bs = np.mean(metrics["bertscore"].compute(predictions=preds, references=refs_flat, lang="ne")['f1']) * 100
+        cm = metrics["comet"].compute(predictions=preds, references=refs_flat, sources=srcs)['mean_score'] * 100
+        final_scores[model] = [ch, bl, bs, cm]
+
+    # Plot
+    labels = ["chrF", "BLEU", "BERTScore", "COMET"]
+    x = np.arange(len(labels))
     width = 0.25
     fig, ax = plt.subplots(figsize=(12, 7))
-
-    ax.bar(x - width, final_metrics["mBART"], width, label='mBART (Baseline)', color='#1f77b4')
-    ax.bar(x, final_metrics["Llama_Direct"], width, label='Llama-3.1-70B (Direct)', color='#ff7f0e')
-    ax.bar(x + width, final_metrics["EchoRefine"], width, label='EchoRefine (Advanced BTI)', color='#2ca02c')
-
-    ax.set_ylabel('Scores (Scaled 0-100)')
-    ax.set_title(f'Translation Performance: English to Nepali (N={num_samples})')
+    ax.bar(x - width, final_scores["mBART"], width, label='mBART Baseline')
+    ax.bar(x, final_scores["Llama_Direct"], width, label='Llama-3.1 Direct')
+    ax.bar(x + width, final_scores["EchoRefine"], width, label='EchoRefine (BTI)')
     ax.set_xticks(x)
-    ax.set_xticklabels(metric_names)
-    ax.legend(loc='upper left')
-    ax.grid(axis='y', linestyle='--', alpha=0.5)
-
-    # Adding Value Labels on Top
-    def autolabel(rects):
-        for rect in rects:
-            height = rect.get_height()
-            ax.annotate(f'{height:.1f}', xy=(rect.get_x() + rect.get_width() / 2, height),
-                        xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=8)
-
-    plt.savefig('echorefine_results.png', dpi=300, bbox_inches='tight')
-    print("Graph saved as 'echorefine_results.png'")
+    ax.set_xticklabels(labels)
+    ax.legend()
+    plt.savefig('echorefine_results.png')
+    print("Done. Results saved to echorefine_results.png")
 
 if __name__ == "__main__":
-    run_advanced_eval(num_samples=5)
-    print(f"--- Sample {i} ---")
-    print(f"Source: {src}")
-    print(f"mBART:  {mbart_draft}")
-    print(f"Refined: {current_refined}")
+    run_eval(num_samples=5)
