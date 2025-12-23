@@ -28,6 +28,7 @@ requests>=2.31.0
 
 bitsandbytes 
 accelerate
+scipy
 
 
 
