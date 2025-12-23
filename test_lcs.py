@@ -47,7 +47,8 @@ class TranslationEvaluator:
         self.llama_mod = AutoModelForCausalLM.from_pretrained(
             LLAMA_MODEL_ID,
             quantization_config=bnb_config,
-            device_map="auto" 
+            device_map="auto",
+            trust_remote_code=True,
         )
         
         print(f"Loading mBART-50...")
