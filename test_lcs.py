@@ -34,7 +34,10 @@ comet_metric = evaluate.load("comet")
 
 class TranslationEvaluator:
     def __init__(self):
-        # 4-bit Quantization is required to fit 70B on 2x A100-40GB
+        # Ensure HUGGING_FACE_HUB_TOKEN is defined at the top of your script
+        # from the os.getenv call you already have.
+        
+        # 1. Quantization Config
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -42,19 +45,31 @@ class TranslationEvaluator:
             bnb_4bit_use_double_quant=True,
         )
 
+        # 2. Loading Llama-3.1-70B (PASS THE TOKEN HERE)
         print(f"Loading {LLAMA_MODEL_ID} (4-bit)...")
-        self.llama_tok = AutoTokenizer.from_pretrained(LLAMA_MODEL_ID)
+        self.llama_tok = AutoTokenizer.from_pretrained(
+            LLAMA_MODEL_ID, 
+            token=HUGGING_FACE_HUB_TOKEN  # Add this line
+        )
         self.llama_mod = AutoModelForCausalLM.from_pretrained(
             LLAMA_MODEL_ID,
             quantization_config=bnb_config,
             device_map="auto",
-            trust_remote_code=True,
+            token=HUGGING_FACE_HUB_TOKEN, # Add this line
+            trust_remote_code=True
         )
         
+        # 3. Loading mBART-50
         print(f"Loading mBART-50...")
-        self.nmt_tok = AutoTokenizer.from_pretrained(MBART_MODEL_ID)
+        self.nmt_tok = AutoTokenizer.from_pretrained(
+            MBART_MODEL_ID,
+            token=HUGGING_FACE_HUB_TOKEN # Recommended for consistency
+        )
         self.nmt_mod = AutoModelForSeq2SeqLM.from_pretrained(
-            MBART_MODEL_ID, torch_dtype=torch.float16, device_map="auto"
+            MBART_MODEL_ID, 
+            torch_dtype=torch.float16, 
+            device_map="auto",
+            token=HUGGING_FACE_HUB_TOKEN # Recommended for consistency
         )
 
     def mbart_translate(self, text, src_iso, tgt_iso):
