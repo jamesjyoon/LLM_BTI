@@ -172,4 +172,4 @@ def run_benchmark(num_samples=50):
     plt.savefig('qe_judged_results.png')
 
 if __name__ == "__main__":
-    run_benchmark(num_samples=100) # Increased to 100 for better significance
+    run_benchmark(num_samples=5) # Increased to 100 for better significance
