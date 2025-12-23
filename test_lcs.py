@@ -8,7 +8,12 @@ import matplotlib.pyplot as plt
 from datasets import load_dataset
 import evaluate
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM, BitsAndBytesConfig
+from dotenv import load_dotenv
+load_dotenv()
 
+# Define these globally so all classes and functions can see them
+HUGGING_FACE_HUB_TOKEN = os.getenv("HUGGING_FACE_HUB_TOKEN")
+# ---------------------
 # Use non-interactive backend for cluster execution
 matplotlib.use('Agg')
 
@@ -34,10 +39,7 @@ comet_metric = evaluate.load("comet")
 
 class TranslationEvaluator:
     def __init__(self):
-        # Ensure HUGGING_FACE_HUB_TOKEN is defined at the top of your script
-        # from the os.getenv call you already have.
-        
-        # 1. Quantization Config
+        # 1. Quantization Config (4-bit for 70B model)
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -45,31 +47,29 @@ class TranslationEvaluator:
             bnb_4bit_use_double_quant=True,
         )
 
-        # 2. Loading Llama-3.1-70B (PASS THE TOKEN HERE)
+        # 2. Loading Llama-3.1-70B
         print(f"Loading {LLAMA_MODEL_ID} (4-bit)...")
+        # Explicitly passing the token from the global variable
         self.llama_tok = AutoTokenizer.from_pretrained(
             LLAMA_MODEL_ID, 
-            token=HUGGING_FACE_HUB_TOKEN  # Add this line
+            token=HUGGING_FACE_HUB_TOKEN
         )
         self.llama_mod = AutoModelForCausalLM.from_pretrained(
             LLAMA_MODEL_ID,
             quantization_config=bnb_config,
             device_map="auto",
-            token=HUGGING_FACE_HUB_TOKEN, # Add this line
+            token=HUGGING_FACE_HUB_TOKEN,
             trust_remote_code=True
         )
         
         # 3. Loading mBART-50
         print(f"Loading mBART-50...")
-        self.nmt_tok = AutoTokenizer.from_pretrained(
-            MBART_MODEL_ID,
-            token=HUGGING_FACE_HUB_TOKEN # Recommended for consistency
-        )
+        self.nmt_tok = AutoTokenizer.from_pretrained(MBART_MODEL_ID, token=HUGGING_FACE_HUB_TOKEN)
         self.nmt_mod = AutoModelForSeq2SeqLM.from_pretrained(
             MBART_MODEL_ID, 
             torch_dtype=torch.float16, 
             device_map="auto",
-            token=HUGGING_FACE_HUB_TOKEN # Recommended for consistency
+            token=HUGGING_FACE_HUB_TOKEN
         )
 
     def mbart_translate(self, text, src_iso, tgt_iso):
