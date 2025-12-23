@@ -54,7 +54,7 @@ fi
 
 # Run the Python script
 echo "Starting translation evaluation pipeline..."
-python ReasonMT.py
+python echorefine.py
 
 # Check exit status
 if [ $? -eq 0 ]; then
