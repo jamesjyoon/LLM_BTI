@@ -3,7 +3,7 @@
 #SBATCH -N1 --ntasks-per-node=1              # Number of nodes and tasks per node
 #SBATCH --cpus-per-task=8                    # Number of CPU cores per task
 #SBATCH --mem=64G                            # Memory per node
-#SBATCH --gres=gpu:A100:1                    # Request 1 A100 GPU (adjust as needed)
+#SBATCH --gres=gpu:A100:2                    # Request 1 A100 GPU (adjust as needed)
 #SBATCH --output=translation_eval_%j.out     # Standard output log (%j = job ID)
 #SBATCH --error=translation_eval_%j.err      # Standard error log
 #SBATCH --qos=coc-ice
