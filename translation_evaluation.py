@@ -49,7 +49,15 @@ class InternalJudge:
         except Exception as e:
             print(f"Failed to load QE model: {e}")
             print("Note: Ensure you have accepted the license for wmt22-comet-qe-da on HF.")
-            raise e
+            try:
+                # Fallback to the reliable 2020 version if 2022/CometKiwi fails
+                fallback_path = download_model("Unbabel/wmt20-comet-qe-da")
+                self.qe_model = load_from_checkpoint(fallback_path)
+                if torch.cuda.is_available():
+                    self.qe_model = self.qe_model.to("cuda")
+            except Exception as e2:
+                print(f"Critical failure: Could not load any QE model. {e2}")
+                raise e2
 
     def select_best(self, source, candidate_a, candidate_b):
         """Compares mBART Draft vs Llama Refined using QE."""
