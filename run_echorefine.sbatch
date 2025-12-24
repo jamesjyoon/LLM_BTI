@@ -8,6 +8,9 @@
 #SBATCH --error=translation_eval_%j.err      # Standard error log
 #SBATCH --qos=coc-ice
 #SBATCH --time=08:00:00   
+#SBATCH --array=0-5  # 0 to 5 corresponds to the 6 languages in EXPERIMENT_CONFIG
+#SBATCH --gres=gpu:2
+#SBATCH --job-name=EchoRefine
 
 # Load required modules
 module purge
@@ -52,9 +55,12 @@ if [ ! -f ".env" ]; then
     exit 1
 fi
 
-# Run the Python script
-echo "Starting translation evaluation pipeline..."
-python echorefine.py
+# Get the language ISO based on the array task ID
+# This helper logic allows the array to pick the right language from your script
+langs=("npi" "mya") 
+current_lang=${langs[$SLURM_ARRAY_TASK_ID]}
+
+python echorefine.py --lang $current_lang
 
 # Check exit status
 if [ $? -eq 0 ]; then
