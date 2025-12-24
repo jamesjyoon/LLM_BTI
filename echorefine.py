@@ -51,8 +51,8 @@ os.environ["HF_TOKEN"] = HF_TOKEN
 # -----------------------------
 LLAMA_ID = "meta-llama/Llama-3.1-70B-Instruct" 
 MBART_ID = "facebook/mbart-large-50-many-to-many-mmt"
-INTERNAL_QE_ID = "Unbabel/wmt22-cometwiki-da"
-FINAL_COMET_ID = "Unbabel/wmt22-comet-da"
+INTERNAL_QE_ID = "wmt22-cometwiki-da"
+FINAL_COMET_ID = "wmt22-comet-da"
 
 # Tiered Language Strategy
 EXPERIMENT_CONFIG = [
