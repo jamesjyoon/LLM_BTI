@@ -24,44 +24,46 @@ HUGGING_FACE_HUB_TOKEN = os.getenv("HUGGING_FACE_HUB_TOKEN")
 # Configuration
 LLAMA_MODEL_ID = "meta-llama/Llama-3.1-70B-Instruct" 
 MBART_MODEL_ID = "facebook/mbart-large-50-many-to-many-mmt"
-QE_MODEL_NAME = "Unbabel/wmt22-comet-qe-da" # Reference-less Quality Estimation
+QE_MODEL_NAME = "Unbabel/wmt22-comet-qe-da" # Reference-less QE
 
 # -----------------------------
-# 1. Internal Judge (Direct COMET usage)
+# 1. Internal Judge (Reference-less)
 # -----------------------------
 class InternalJudge:
     def __init__(self, token):
         print(f"Loading {QE_MODEL_NAME} Judge...")
-        # We load directly via the comet library to ensure the token is used
+        
+        # Programmatically set the HF Token environment variable 
+        # so comet (which uses huggingface_hub) can see it.
+        if token:
+            os.environ["HF_TOKEN"] = token
+            os.environ["HF_HUB_TOKEN"] = token
+
         try:
-            model_path = download_model(QE_MODEL_NAME, token=token)
+            # download_model does not take 'token' as an argument in recent versions
+            model_path = download_model(QE_MODEL_NAME)
             self.qe_model = load_from_checkpoint(model_path)
-            # Ensure model is on GPU
+            
             if torch.cuda.is_available():
                 self.qe_model = self.qe_model.to("cuda")
         except Exception as e:
             print(f"Failed to load QE model: {e}")
+            print("Note: Ensure you have accepted the license for wmt22-comet-qe-da on HF.")
             raise e
 
     def select_best(self, source, candidate_a, candidate_b):
-        """
-        Compares two candidates using QE (Reference-less).
-        candidate_a: mBART Draft
-        candidate_b: Llama Refined
-        """
-        # Prepare data for COMET QE (No 'ref' needed)
+        """Compares mBART Draft vs Llama Refined using QE."""
         data = [
             {"src": source, "mt": candidate_a},
             {"src": source, "mt": candidate_b}
         ]
         
-        # Disable logging for cleaner output
         with torch.no_grad():
+            # gpus=1 handles the distribution internally via comet
             outputs = self.qe_model.predict(data, batch_size=2, gpus=1 if torch.cuda.is_available() else 0)
         
         scores = outputs.scores
         
-        # Logic: If refined version (index 1) is better, pick it.
         if scores[1] > scores[0]:
             return candidate_b, "LLM_Refined", scores[1]
         return candidate_a, "mBART_Original", scores[0]
@@ -81,12 +83,20 @@ class TranslationSystem:
         print(f"Loading {LLAMA_MODEL_ID}...")
         self.llama_tok = AutoTokenizer.from_pretrained(LLAMA_MODEL_ID, token=token)
         self.llama_mod = AutoModelForCausalLM.from_pretrained(
-            LLAMA_MODEL_ID, quantization_config=bnb_config, device_map="auto", token=token
+            LLAMA_MODEL_ID, 
+            quantization_config=bnb_config, 
+            device_map="auto", 
+            token=token,
+            dtype=torch.float16 # Fixed: replaced torch_dtype with dtype
         )
         
         print(f"Loading mBART-50...")
         self.nmt_tok = AutoTokenizer.from_pretrained(MBART_MODEL_ID)
-        self.nmt_mod = AutoModelForSeq2SeqLM.from_pretrained(MBART_MODEL_ID, torch_dtype=torch.float16, device_map="auto")
+        self.nmt_mod = AutoModelForSeq2SeqLM.from_pretrained(
+            MBART_MODEL_ID, 
+            dtype=torch.float16, # Fixed: replaced torch_dtype with dtype
+            device_map="auto"
+        )
 
     def mbart_translate(self, text, src_iso, tgt_iso):
         mapping = {"eng": "en_XX", "npi": "ne_NP"}
@@ -97,7 +107,7 @@ class TranslationSystem:
 
     def llama_refine(self, source, draft, back_trans):
         messages = [
-            {"role": "system", "content": "You are a Nepali editor. Correct the translation based on back-translation. Be concise. RESULT: [Nepali Only]"},
+            {"role": "system", "content": "You are a Nepali editor. Fix errors based on back-translation. Output ONLY Nepali text after 'RESULT:'"},
             {"role": "user", "content": f"Source: {source}\nDraft: {draft}\nBack-trans: {back_trans}\n\nRESULT:"}
         ]
         prompt = self.llama_tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
@@ -106,11 +116,12 @@ class TranslationSystem:
         res = self.llama_tok.decode(outputs[0][inputs.input_ids.shape[-1]:], skip_special_tokens=True).strip()
         
         final = res.split("RESULT:")[-1].strip()
+        # Language Guard
         if len(re.findall(r'[a-zA-Z]', final)) > (len(final) * 0.25): return draft
         return final
 
 # -----------------------------
-# 3. Main Benchmark Execution
+# 3. Execution & Evaluation
 # -----------------------------
 def run_benchmark(num_samples=50):
     if not HUGGING_FACE_HUB_TOKEN:
@@ -119,7 +130,7 @@ def run_benchmark(num_samples=50):
     system = TranslationSystem(HUGGING_FACE_HUB_TOKEN)
     judge = InternalJudge(HUGGING_FACE_HUB_TOKEN)
     
-    # EXTERNAL EVALUATION METRICS
+    # EXTERNAL METRICS
     metrics = {
         "bleu": evaluate.load("bleu"),
         "chrf": evaluate.load("chrf"),
@@ -139,16 +150,11 @@ def run_benchmark(num_samples=50):
         src = eng_df.iloc[i]['text']
         ref = npi_df.iloc[i]['text']
 
-        # 1. Draft
         draft = system.mbart_translate(src, "eng", "npi")
-        
-        # 2. Back-Translate
         back = system.mbart_translate(draft, "npi", "eng")
-        
-        # 3. Refine
         refined_candidate = system.llama_refine(src, draft, back)
         
-        # 4. Reference-less Judge
+        # Use QE judge to choose between original and refined
         final_decision, choice_made, qe_score = judge.select_best(src, draft, refined_candidate)
 
         storage["mBART"].append(draft)
@@ -156,9 +162,9 @@ def run_benchmark(num_samples=50):
         storage["Ref"].append(ref)
         
         if (i+1) % 5 == 0:
-            print(f"[{i+1}/{num_samples}] Decision: {choice_made} (QE: {qe_score:.4f})")
+            print(f"[{i+1}/{num_samples}] Decision: {choice_made} (QE Score: {qe_score:.4f})")
 
-    # Final Evaluation
+    # Evaluation
     final_results = {}
     for key in ["mBART", "EchoRefine"]:
         preds = storage[key]
@@ -167,10 +173,9 @@ def run_benchmark(num_samples=50):
         b = metrics["bleu"].compute(predictions=preds, references=refs_nested)['bleu'] * 100
         c = metrics["chrf"].compute(predictions=preds, references=refs_nested)['score']
         bs = np.mean(metrics["bertscore"].compute(predictions=preds, references=storage["Ref"], lang="ne")['f1']) * 100
-        
         final_results[key] = [b, c, bs]
 
-    # Print Table
+    # Print Results
     print("\n" + "="*45)
     print(f"{'Metric':<15} | {'mBART':<10} | {'EchoRefine':<10}")
     print("-" * 45)
@@ -179,14 +184,13 @@ def run_benchmark(num_samples=50):
         print(f"{label:<15} | {final_results['mBART'][idx]:<10.2f} | {final_results['EchoRefine'][idx]:<10.2f}")
     print("="*45)
 
-    # Plotting
+    # Plot
     x = np.arange(len(labels))
     width = 0.35
     plt.bar(x - width/2, final_results["mBART"], width, label='mBART Baseline')
     plt.bar(x + width/2, final_results["EchoRefine"], width, label='EchoRefine (QE-Judge)')
-    plt.xticks(x, labels); plt.ylabel("Score"); plt.legend(); plt.title("Performance with Reference-less Judging")
-    plt.savefig('qe_judged_comparison.png')
-    print("Graph saved as 'qe_judged_comparison.png'")
+    plt.xticks(x, labels); plt.ylabel("Score"); plt.legend(); plt.title("Internal QE-Judging Evaluation")
+    plt.savefig('qe_judged_benchmark.png')
 
 if __name__ == "__main__":
     run_benchmark(num_samples=5)
