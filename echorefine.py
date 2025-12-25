@@ -56,15 +56,15 @@ INTERNAL_QE_ID = "Unbabel/wmt22-cometkiwi-da"
 FINAL_COMET_ID = "Unbabel/wmt22-comet-da"
 
 # Tiered Language Strategy
-EXPERIMENT_CONFIG = [
-    {"iso": "ben", "name": "Bengali", "mbart": "bn_IN", "tier": "Mid-Res"},
-    {"iso": "sin", "name": "Sinhala", "mbart": "si_LK", "tier": "Low-Res"},
+# EXPERIMENT_CONFIG = [
+#     {"iso": "ben", "name": "Bengali", "mbart": "bn_IN", "tier": "Mid-Res"},
+#     {"iso": "sin", "name": "Sinhala", "mbart": "si_LK", "tier": "Low-Res"},
     {"iso": "npi", "name": "Nepali", "mbart": "ne_NP", "tier": "Low-Res"},
-    {"iso": "mya", "name": "Burmese", "mbart": "my_MM", "tier": "Low-Res"},
-    {"iso": "amh", "name": "Amharic", "mbart": "am_XX", "tier": "Low-Res"},
-    {"iso": "hin", "name": "Hindi", "mbart": "hi_IN", "tier": "Mid-Res"},
-    {"iso": "kor", "name": "Korean", "mbart": "ko_KR", "tier": "Qualitative"},
-    {"iso": "fra", "name": "French", "mbart": "fr_XX", "tier": "High-Res"}
+    # {"iso": "mya", "name": "Burmese", "mbart": "my_MM", "tier": "Low-Res"},
+    # {"iso": "amh", "name": "Amharic", "mbart": "am_XX", "tier": "Low-Res"},
+    # {"iso": "hin", "name": "Hindi", "mbart": "hi_IN", "tier": "Mid-Res"},
+    # {"iso": "kor", "name": "Korean", "mbart": "ko_KR", "tier": "Qualitative"},
+    # {"iso": "fra", "name": "French", "mbart": "fr_XX", "tier": "High-Res"}
 ]
 
 # -----------------------------
