@@ -42,10 +42,10 @@ FINAL_COMET_ID = "Unbabel/wmt22-comet-da"
 
 EXPERIMENT_CONFIG = [
     {"iso": "npi", "name": "Nepali", "mbart": "ne_NP", "tier": "Low-Res"},
-    {"iso": "ben", "name": "Bengali", "mbart": "bn_IN", "tier": "Mid-Res"},
-    {"iso": "sin", "name": "Sinhala", "mbart": "si_LK", "tier": "Low-Res"},
-    {"iso": "mya", "name": "Burmese", "mbart": "my_MM", "tier": "Low-Res"},
-    {"iso": "kor", "name": "Korean", "mbart": "ko_KR", "tier": "Qualitative"},
+    # {"iso": "ben", "name": "Bengali", "mbart": "bn_IN", "tier": "Mid-Res"},
+    # {"iso": "sin", "name": "Sinhala", "mbart": "si_LK", "tier": "Low-Res"},
+    # {"iso": "mya", "name": "Burmese", "mbart": "my_MM", "tier": "Low-Res"},
+    # {"iso": "kor", "name": "Korean", "mbart": "ko_KR", "tier": "Qualitative"},
 ]
 
 # -----------------------------
