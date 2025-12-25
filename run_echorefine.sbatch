@@ -8,7 +8,6 @@
 #SBATCH --error=translation_eval_%j.err      # Standard error log
 #SBATCH --qos=coc-ice
 #SBATCH --time=08:00:00   
-#SBATCH --array=0-3  # 0 to 3 corresponds to the 4 languages in EXPERIMENT_CONFIG
 #SBATCH --gres=gpu:2
 #SBATCH --job-name=EchoRefine
 
@@ -57,7 +56,7 @@ fi
 
 # Get the language ISO based on the array task ID
 # This helper logic allows the array to pick the right language from your script
-langs=("ben" "sin" "npi" "mya") 
+langs=("npi") 
 current_lang=${langs[$SLURM_ARRAY_TASK_ID]}
 
 python echorefine.py --lang $current_lang
