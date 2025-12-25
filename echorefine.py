@@ -82,7 +82,7 @@ class EchoRefineSystem:
         
         print("Initializing NMT Drafting Engine (mBART-50)...")
         self.n_tok = AutoTokenizer.from_pretrained(MBART_ID)
-        self.n_mod = AutoModelForSeq2SeqLM.from_pretrained(MBART_ID, torch_dtype=torch.float16, device_map="auto")
+        self.n_mod = AutoModelForSeq2SeqLM.from_pretrained(MBART_ID, dtype=torch.float16, device_map="auto")
 
         print("Initializing Internal QE Judge (CometKiwi)...")
         qe_path = download_model(INTERNAL_QE_ID)
