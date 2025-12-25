@@ -18,19 +18,20 @@ from comet import download_model, load_from_checkpoint
 import os
 import warnings
 import logging
-
-# Set environment variables BEFORE importing heavy libraries
-os.environ["HF_HUB_DISABLE_PROGRESS_BAR"] = "1"
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
 import transformers
 import datasets
-import torch
+# Set environment variables BEFORE importing heavy libraries
+os.environ["HF_HUB_DISABLE_PROGRESS_BAR"] = "1"
+os.environ["HF_DATASETS_DISABLE_PROGRESS_BARS"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+tqdm.disable = True
+datasets.disable_progress_bar()
 
 # Disable progress bars in the libraries
 transformers.utils.logging.disable_progress_bar()
+transformers.utils.logging.set_verbosity_error()
 datasets.utils.logging.disable_progress_bar()
-
+datasets.disable_progress_bar()
 # Suppress warnings
 warnings.filterwarnings("ignore")
 logging.getLogger("pytorch_lightning").setLevel(logging.ERROR)
@@ -60,7 +61,7 @@ EXPERIMENT_CONFIG = [
     {"iso": "sin", "name": "Sinhala", "mbart": "si_LK", "tier": "Low-Res"},
     {"iso": "npi", "name": "Nepali", "mbart": "ne_NP", "tier": "Low-Res"},
     {"iso": "mya", "name": "Burmese", "mbart": "my_MM", "tier": "Low-Res"},
-    {"iso": "amh", "name": "Amharic", "mbart": "am_ET", "tier": "Low-Res"},
+    {"iso": "amh", "name": "Amharic", "mbart": "am_XX", "tier": "Low-Res"},
     {"iso": "hin", "name": "Hindi", "mbart": "hi_IN", "tier": "Mid-Res"},
     {"iso": "kor", "name": "Korean", "mbart": "ko_KR", "tier": "Qualitative"},
     {"iso": "fra", "name": "French", "mbart": "fr_XX", "tier": "High-Res"}
