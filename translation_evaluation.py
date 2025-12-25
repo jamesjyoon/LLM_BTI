@@ -24,7 +24,7 @@ HUGGING_FACE_HUB_TOKEN = os.getenv("HUGGING_FACE_HUB_TOKEN")
 # Configuration
 LLAMA_MODEL_ID = "meta-llama/Llama-3.1-70B-Instruct" 
 MBART_MODEL_ID = "facebook/mbart-large-50-many-to-many-mmt"
-QE_MODEL_NAME = "Unbabel/wmt22-cometwiki-da" 
+QE_MODEL_NAME = "Unbabel/wmt22-cometkiwi-da" 
 
 # -----------------------------
 # 1. Internal Judge (Reference-less)
