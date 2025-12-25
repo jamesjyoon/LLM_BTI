@@ -57,7 +57,7 @@ fi
 
 # Get the language ISO based on the array task ID
 # This helper logic allows the array to pick the right language from your script
-langs=("npi" "mya") 
+langs=("npi") 
 current_lang=${langs[$SLURM_ARRAY_TASK_ID]}
 
 python echorefine.py --lang $current_lang
