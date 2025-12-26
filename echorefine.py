@@ -81,30 +81,49 @@ class EchoRefineSystem:
         outputs = self.n_mod.generate(**inputs, forced_bos_token_id=self.n_tok.lang_code_to_id[tgt_tag])
         return self.n_tok.decode(outputs[0], skip_special_tokens=True)
 
-    def refine_with_cot(self, source, draft, back_trans, lang_name):
+    def llama_multi_refine(self, source, draft, back_trans, lang_name, k=3):
+        """Generates k different candidates and uses the Judge to pick the winner."""
         messages = [
-            {"role": "system", "content": f"You are a professional {lang_name} translator. Your task is to fix the translation draft based on back-translation discrepancies. Provide ONLY the corrected text after 'RESULT:'."},
-            {"role": "user", "content": f"Original English: {source}\n{lang_name} Draft: {draft}\nBack-translation into English: {back_trans}\n\nRESULT:"}
+            {"role": "system", "content": f"You are a professional {lang_name} editor. Correct the translation draft based on back-translation. Keep the style consistent."},
+            {"role": "user", "content": f"Source: {source}\nDraft: {draft}\nBack-trans: {back_trans}\n\nRESULT:"}
         ]
         prompt = self.l_tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.l_tok(prompt, return_tensors="pt").to(self.l_mod.device)
-        outputs = self.l_mod.generate(**inputs, max_new_tokens=300, do_sample=False, pad_token_id=self.l_tok.eos_token_id)
-        res = self.l_tok.decode(outputs[0][inputs.input_ids.shape[-1]:], skip_special_tokens=True)
         
-        final = res.split("RESULT:")[-1].strip() if "RESULT:" in res else res
-        # Language Guard
-        if len(re.findall(r'[a-zA-Z]', final)) > (len(final) * 0.25): return draft
-        return final
+        candidates = []
+        # We generate k samples with temperature to get diversity
+        for _ in range(k):
+            with torch.no_grad():
+                outputs = self.l_mod.generate(
+                    **inputs, 
+                    max_new_tokens=150, 
+                    do_sample=True, # Enable sampling for diversity
+                    temperature=0.4, 
+                    top_p=0.9,
+                    pad_token_id=self.l_tok.eos_token_id
+                )
+            res = self.l_tok.decode(outputs[0][inputs.input_ids.shape[-1]:], skip_special_tokens=True).strip()
+            final = res.split("RESULT:")[-1].strip()
+            # Basic language guard per candidate
+            if len(re.findall(r'[a-zA-Z]', final)) <= (len(final) * 0.25):
+                candidates.append(final)
+        
+        # If no clean candidates, return the draft
+        if not candidates: return draft
+        
+        # Use the Judge to pick the best from the pool (k candidates + 1 original draft)
+        pool = [draft] + list(set(candidates))
+        best_text, _ = self.judge_pool(source, pool)
+        return best_text
 
-    def judge(self, source, draft, refined):
-        data = [{"src": source, "mt": draft}, {"src": source, "mt": refined}]
+    def judge_pool(self, source, pool):
+        """Scores all candidates in the pool and picks the winner."""
+        data = [{"src": source, "mt": cand} for cand in pool]
         with torch.no_grad():
-            scores = self.qe_mod.predict(data, batch_size=2, gpus=1, progress_bar=False).scores
+            scores = self.qe_mod.predict(data, batch_size=len(pool), gpus=1, progress_bar=False).scores
         
-        # Selection Logic: Margin of 0.02 to favor LLM fluency
-        if scores[1] > (scores[0] - 0.02):
-            return refined, "LLM"
-        return draft, "mBART"
+        best_idx = np.argmax(scores)
+        return pool[best_idx], "LLM" if best_idx > 0 else "mBART"
 
 # -----------------------------
 # 3. Main Execution
